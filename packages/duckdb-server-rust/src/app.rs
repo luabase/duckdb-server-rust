@@ -47,6 +47,8 @@ pub fn app(db_path: &str, pool_size: u32) -> Result<Router> {
     let db = ConnectionPool::new(db_path, effective_pool_size)?;
     let cache = lru::LruCache::new(1000.try_into()?);
 
+    tracing::info!("Using DuckDB {0}.", db_path);
+
     let state = Arc::new(AppState {
         db: Box::new(db),
         cache: Mutex::new(cache),
