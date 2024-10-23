@@ -20,8 +20,8 @@ mod websocket;
 #[command(author, version, about)]
 struct Args {
     /// Path to the DuckDB database file (default: ":memory:")
-    #[arg(short, long)]
-    db_path: Option<String>,
+    #[arg(default_value = ":memory:")]
+    db_path: String,
 
     /// Size of the connection pool (default: 1)
     #[arg(short, long, default_value_t = 1)]
@@ -31,7 +31,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let db_path = args.db_path.unwrap_or_else(|| ":memory:".to_string());
+    let db_path = args.db_path;
 
     // Tracing setup
     tracing_subscriber::registry()
