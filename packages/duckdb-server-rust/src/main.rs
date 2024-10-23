@@ -1,5 +1,6 @@
 use anyhow::Result;
 use axum_server::tls_rustls::RustlsConfig;
+use clap::Parser;
 use listenfd::ListenFd;
 use std::net::TcpListener;
 use std::{net::Ipv4Addr, net::SocketAddr, path::PathBuf};
@@ -14,8 +15,24 @@ mod interfaces;
 mod query;
 mod websocket;
 
+// Define command-line arguments using clap
+#[derive(Parser, Debug)]
+#[command(author, version, about)]
+struct Args {
+    /// Path to the DuckDB database file (default: ":memory:")
+    #[arg(short, long)]
+    db_path: Option<String>,
+
+    /// Size of the connection pool (default: 1)
+    #[arg(short, long, default_value_t = 1)]
+    pool_size: u32,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+    let db_path = args.db_path.unwrap_or_else(|| ":memory:".to_string());
+
     // Tracing setup
     tracing_subscriber::registry()
         .with(
@@ -27,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     // App setup
-    let app = app::app()?;
+    let app = app::app(&db_path, args.pool_size)?;
 
     // TLS configuration
     let mut config = RustlsConfig::from_pem_file(

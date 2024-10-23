@@ -40,9 +40,11 @@ async fn handle_post(
     query::handle(&state, params).await
 }
 
-pub fn app() -> Result<Router> {
+pub fn app(db_path: &str, pool_size: u32) -> Result<Router> {
+    let effective_pool_size = if db_path == ":memory:" { 1 } else { pool_size };
+
     // Database and state setup
-    let db = ConnectionPool::new(":memory:", 1)?; // TODO: we can only use one connection since temp tables are scoped per connection
+    let db = ConnectionPool::new(db_path, effective_pool_size)?;
     let cache = lru::LruCache::new(1000.try_into()?);
 
     let state = Arc::new(AppState {
