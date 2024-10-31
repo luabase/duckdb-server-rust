@@ -36,8 +36,8 @@ pub enum Command {
 
 #[derive(Deserialize, Serialize, Debug, Default)]
 pub struct QueryParams {
-    #[serde(rename = "type")]
     pub database: String,
+    #[serde(rename = "type")]
     pub query_type: Option<Command>,
     pub persist: Option<bool>,
     pub sql: Option<String>,
