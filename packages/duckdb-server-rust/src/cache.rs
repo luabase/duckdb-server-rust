@@ -21,6 +21,7 @@ pub async fn retrieve<F, Fut>(
     sql: &str,
     command: &Command,
     persist: bool,
+    invalidate: bool,
     f: F,
 ) -> Result<Vec<u8>>
 where
@@ -29,7 +30,9 @@ where
 {
     let key = get_key(sql, command);
 
-    if let Some(cached) = cache.lock().await.get(&key) {
+    if invalidate {
+        flush(&cache, sql, &command).await;
+    } else if let Some(cached) = cache.lock().await.get(&key) {
         tracing::debug!("Cache hit {}!", key);
         return Ok(cached.clone());
     }
@@ -41,4 +44,19 @@ where
     }
 
     Ok(result)
+}
+
+pub async fn flush(
+    cache: &Mutex<lru::LruCache<String, Vec<u8>>>,
+    sql: &str,
+    command: &Command,
+) {
+    let key = get_key(sql, command);
+
+    let mut cache_lock = cache.lock().await;
+    if cache_lock.pop(&key).is_some() {
+        tracing::info!("Cache entry cleared for key: {}", key);
+    } else {
+        tracing::info!("No cache entry found for key: {}", key);
+    }
 }

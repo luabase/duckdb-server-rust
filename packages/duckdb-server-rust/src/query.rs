@@ -22,7 +22,8 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
         Some(Command::Arrow) => {
             if let Some(sql) = params.sql.as_deref() {
                 let persist = params.persist.unwrap_or(true);
-                let buffer = retrieve(&db_state.cache, sql, &Command::Arrow, persist, || {
+                let invalidate = params.invalidate.unwrap_or(false);
+                let buffer = retrieve(&db_state.cache, sql, &Command::Arrow, persist, invalidate, || {
                     db_state.db.get_arrow(sql)
                 })
                 .await?;
@@ -42,7 +43,8 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
         Some(Command::Json) => {
             if let Some(sql) = params.sql.as_deref() {
                 let persist = params.persist.unwrap_or(true);
-                let json: Vec<u8> = retrieve(&db_state.cache, sql, &Command::Json, persist, || {
+                let invalidate = params.invalidate.unwrap_or(false);
+                let json: Vec<u8> = retrieve(&db_state.cache, sql, &Command::Json, persist, invalidate, || {
                     db_state.db.get_json(sql)
                 })
                 .await?;

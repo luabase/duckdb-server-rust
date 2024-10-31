@@ -74,7 +74,7 @@ pub async fn create(
                 Command::Arrow
             };
             let key = get_key(sql, &command);
-            let result = retrieve(cache, sql, &command, true, || {
+            let result = retrieve(cache, sql, &command, true, false, || {
                 if let Command::Arrow = command {
                     db.get_arrow(sql)
                 } else {
