@@ -3,16 +3,25 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use serde_json::to_value;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use std::collections::HashMap;
 
-use duckdb_server::{get_key, handle, AppState, Command, ConnectionPool, QueryParams};
+use duckdb_server::{get_key, handle, AppState, Command, ConnectionPool, DbState, QueryParams};
 
 pub fn benchmark(c: &mut Criterion) {
     let db = ConnectionPool::new(":memory:", 10).unwrap();
     let cache = lru::LruCache::new(10.try_into().unwrap());
 
+    let mut states = HashMap::new();
+    states.insert(
+        "default".to_string(),
+        DbState {
+            db: Box::new(db),
+            cache: Mutex::new(cache),
+        },
+    );
+
     let state = Arc::new(AppState {
-        db: Box::new(db),
-        cache: Mutex::new(cache),
+        states: Mutex::new(states),
     });
 
     let mut group = c.benchmark_group("handle");
@@ -23,6 +32,7 @@ pub fn benchmark(c: &mut Criterion) {
             |b, command| {
                 b.to_async(FuturesExecutor).iter(|| {
                     let params = QueryParams {
+                        database: "default".to_string(),
                         query_type: Some(command.clone()),
                         sql: Some("SELECT 1 AS foo".to_string()),
                         ..QueryParams::default()

@@ -11,13 +11,19 @@ fn create_bundle_path(bundle_name: &str) -> PathBuf {
 
 pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryResponse, AppError> {
     let command = &params.query_type;
+    let database_id = &params.database;
+
+    let states = state.states.lock().await;
+    let db_state = states.get(database_id).ok_or(AppError::BadRequest)?;
+
     tracing::info!("Command: '{:?}', Params: '{:?}'", command, params);
+
     match command {
         Some(Command::Arrow) => {
             if let Some(sql) = params.sql.as_deref() {
                 let persist = params.persist.unwrap_or(true);
-                let buffer = retrieve(&state.cache, sql, &Command::Arrow, persist, || {
-                    state.db.get_arrow(sql)
+                let buffer = retrieve(&db_state.cache, sql, &Command::Arrow, persist, || {
+                    db_state.db.get_arrow(sql)
                 })
                 .await?;
                 Ok(QueryResponse::Arrow(buffer))
@@ -27,7 +33,7 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
         }
         Some(Command::Exec) => {
             if let Some(sql) = params.sql.as_deref() {
-                state.db.execute(sql).await?;
+                db_state.db.execute(sql).await?;
                 Ok(QueryResponse::Empty)
             } else {
                 Err(AppError::BadRequest)
@@ -36,8 +42,8 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
         Some(Command::Json) => {
             if let Some(sql) = params.sql.as_deref() {
                 let persist = params.persist.unwrap_or(true);
-                let json: Vec<u8> = retrieve(&state.cache, sql, &Command::Json, persist, || {
-                    state.db.get_json(sql)
+                let json: Vec<u8> = retrieve(&db_state.cache, sql, &Command::Json, persist, || {
+                    db_state.db.get_json(sql)
                 })
                 .await?;
                 let string = String::from_utf8(json)?;
@@ -50,7 +56,7 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
             if let Some(queries) = params.queries {
                 let bundle_name = params.name.unwrap_or_else(|| "default".to_string());
                 let bundle_path = create_bundle_path(&bundle_name);
-                create(state.db.as_ref(), &state.cache, queries, &bundle_path).await?;
+                create(db_state.db.as_ref(), &db_state.cache, queries, &bundle_path).await?;
                 Ok(QueryResponse::Empty)
             } else {
                 Err(AppError::BadRequest)
@@ -59,7 +65,7 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
         Some(Command::LoadBundle) => {
             if let Some(bundle_name) = params.name {
                 let bundle_path = create_bundle_path(&bundle_name);
-                load(state.db.as_ref(), &state.cache, &bundle_path).await?;
+                load(db_state.db.as_ref(), &db_state.cache, &bundle_path).await?;
                 Ok(QueryResponse::Empty)
             } else {
                 Err(AppError::BadRequest)

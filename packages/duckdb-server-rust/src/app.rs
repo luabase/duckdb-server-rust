@@ -6,6 +6,7 @@ use axum::{
     routing::get,
     Router,
 };
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -13,7 +14,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::{compression::CompressionLayer, trace::TraceLayer};
 
 use crate::db::ConnectionPool;
-use crate::interfaces::{AppError, AppState, QueryParams, QueryResponse};
+use crate::interfaces::{AppError, AppState, DbConfig, DbState, QueryParams, QueryResponse};
 use crate::query;
 use crate::websocket;
 
@@ -27,7 +28,8 @@ async fn handle_get(
         Ok(QueryResponse::Response(
             ws.on_upgrade(|socket| websocket::handle(socket, state)),
         ))
-    } else {
+    }
+    else {
         // HTTP request
         query::handle(&state, params).await
     }
@@ -40,18 +42,27 @@ async fn handle_post(
     query::handle(&state, params).await
 }
 
-pub fn app(db_path: &str, pool_size: u32) -> Result<Router> {
-    let effective_pool_size = if db_path == ":memory:" { 1 } else { pool_size };
+pub fn app(db_configs: Vec<DbConfig>, pool_size: u32) -> Result<Router> {
+    let mut states = HashMap::new();
 
-    // Database and state setup
-    let db = ConnectionPool::new(db_path, effective_pool_size)?;
-    let cache = lru::LruCache::new(1000.try_into()?);
+    for db_config in db_configs {
+        let effective_pool_size = if db_config.path == ":memory:" { 1 } else { pool_size };
+        let db = ConnectionPool::new(&db_config.path, effective_pool_size)?;
+        let cache = Mutex::new(lru::LruCache::new(1000.try_into()?));
 
-    tracing::info!("Using DuckDB {0}.", db_path);
+        tracing::info!("Using DuckDB with ID: {}, Path: {}", db_config.id, db_config.path);
 
-    let state = Arc::new(AppState {
-        db: Box::new(db),
-        cache: Mutex::new(cache),
+        states.insert(
+            db_config.id.clone(),
+            DbState {
+                db: Box::new(db),
+                cache,
+            },
+        );
+    }
+
+    let app_state = Arc::new(AppState {
+        states: Mutex::new(states),
     });
 
     // CORS setup
@@ -59,12 +70,12 @@ pub fn app(db_path: &str, pool_size: u32) -> Result<Router> {
         .allow_origin(Any)
         .allow_methods([Method::OPTIONS, Method::POST, Method::GET])
         .allow_headers(Any)
-        .max_age(Duration::from_secs(60) * 60 * 24);
+        .max_age(Duration::from_secs(60 * 60 * 24));
 
     // Router setup
     Ok(Router::new()
         .route("/", get(handle_get).post(handle_post))
-        .with_state(state)
+        .with_state(app_state) // Use shared state across routes
         .layer(cors)
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http()))

@@ -4,14 +4,24 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tokio::sync::Mutex;
 
 use crate::bundle::Query as BundleQuery;
 use crate::db::Database;
 
 pub struct AppState {
+    pub states: Mutex<HashMap<String, DbState>>,
+}
+
+pub struct DbState {
     pub db: Box<dyn Database>,
     pub cache: Mutex<lru::LruCache<String, Vec<u8>>>,
+}
+
+pub struct DbConfig {
+    pub id: String,
+    pub path: String,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -27,6 +37,7 @@ pub enum Command {
 #[derive(Deserialize, Serialize, Debug, Default)]
 pub struct QueryParams {
     #[serde(rename = "type")]
+    pub database: String,
     pub query_type: Option<Command>,
     pub persist: Option<bool>,
     pub sql: Option<String>,
@@ -50,12 +61,9 @@ impl IntoResponse for QueryResponse {
                 Bytes::from(bytes),
             )
                 .into_response(),
-            QueryResponse::Json(value) => (
-                StatusCode::OK,
-                [("Content-Type", "application/json")],
-                value,
-            )
-                .into_response(),
+            QueryResponse::Json(value) => {
+                (StatusCode::OK, [("Content-Type", "application/json")], value).into_response()
+            }
             QueryResponse::Response(response) => response,
             QueryResponse::Empty => StatusCode::OK.into_response(),
         }

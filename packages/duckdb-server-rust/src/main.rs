@@ -7,6 +7,8 @@ use std::{net::Ipv4Addr, net::SocketAddr, path::PathBuf};
 use tokio::net;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use crate::interfaces::DbConfig;
+
 mod app;
 mod bundle;
 mod cache;
@@ -15,25 +17,37 @@ mod interfaces;
 mod query;
 mod websocket;
 
-// Define command-line arguments using clap
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 struct Args {
-    /// Path to the DuckDB database file (default: ":memory:")
-    #[arg(default_value = ":memory:")]
-    db_path: String,
+    /// List of databases in the format `id=path`
+    #[arg(long = "db", value_parser = parse_db, num_args = 1..)]
+    db_configs: Vec<(String, String)>,
 
     /// Size of the connection pool (default: 1)
     #[arg(short, long, default_value_t = 1)]
     pool_size: u32,
 }
 
+fn parse_db(s: &str) -> Result<(String, String), String> {
+    let parts: Vec<&str> = s.splitn(2, '=').collect();
+    if parts.len() != 2 {
+        Err(format!("Invalid format for --db argument: {}", s))
+    } else {
+        Ok((parts[0].to_string(), parts[1].to_string()))
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let db_path = args.db_path;
 
-    // Tracing setup
+    let db_configs: Vec<DbConfig> = args
+        .db_configs
+        .into_iter()
+        .map(|(id, path)| DbConfig { id, path })
+        .collect();
+
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
@@ -43,8 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    // App setup
-    let app = app::app(&db_path, args.pool_size)?;
+    let app = app::app(db_configs, args.pool_size)?;
 
     // TLS configuration
     let mut config = RustlsConfig::from_pem_file(
@@ -54,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await;
 
     if config.is_err() {
-        // try current directory for HTTPS keys if env didn't work
+        // Try current directory for HTTPS keys if env didn't work
         config = RustlsConfig::from_pem_file("./localhost.pem", "./localhost-key.pem").await;
     }
 
@@ -62,12 +75,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 3000);
     let mut listenfd = ListenFd::from_env();
     let listener = match listenfd.take_tcp_listener(0)? {
-        // if we are given a tcp listener on listen fd 0, we use that one
+        // If we are given a tcp listener on listen fd 0, we use that one
         Some(listener) => {
             listener.set_nonblocking(true)?;
             listener
         }
-        // otherwise fall back to local listening
+        // Otherwise fall back to local listening
         None => TcpListener::bind(addr)?,
     };
 
