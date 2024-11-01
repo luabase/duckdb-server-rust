@@ -48,7 +48,13 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
                     db_state.db.get_json(sql)
                 })
                 .await?;
-                let string = String::from_utf8(json)?;
+
+                let string = if json.is_empty() {
+                    "[]".to_string()
+                } else {
+                    String::from_utf8(json)?
+                };
+
                 Ok(QueryResponse::Json(string))
             } else {
                 Err(AppError::BadRequest)
