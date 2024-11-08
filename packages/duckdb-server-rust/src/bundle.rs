@@ -73,12 +73,13 @@ pub async fn create(
             } else {
                 Command::Arrow
             };
-            let key = get_key(sql, &command);
-            let result = retrieve(cache, sql, &command, true, false, || {
+            let args = vec![];
+            let key = get_key(sql, &args, &command);
+            let result = retrieve(cache, sql, &args, &command, true, false, || {
                 if let Command::Arrow = command {
-                    db.get_arrow(sql)
+                    db.get_arrow(sql, &args)
                 } else {
-                    db.get_json(sql)
+                    db.get_json(sql, &args)
                 }
             })
             .await?;

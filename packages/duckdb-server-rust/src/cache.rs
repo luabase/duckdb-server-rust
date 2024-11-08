@@ -2,10 +2,10 @@ use anyhow::Result;
 use serde_json::to_value;
 use tokio::sync::Mutex;
 
-use crate::interfaces::Command;
+use crate::interfaces::{Command, SqlValue};
 
 #[must_use]
-pub fn get_key(sql: &str, args: &[&dyn duckdb::types::ToSql], command: &Command) -> String {
+pub fn get_key(sql: &str, args: &[SqlValue], command: &Command) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(sql);
@@ -25,7 +25,7 @@ pub fn get_key(sql: &str, args: &[&dyn duckdb::types::ToSql], command: &Command)
 pub async fn retrieve<F, Fut>(
     cache: &Mutex<lru::LruCache<String, Vec<u8>>>,
     sql: &str,
-    args: &[&dyn duckdb::types::ToSql],
+    args: &[SqlValue],
     command: &Command,
     persist: bool,
     invalidate: bool,
@@ -56,7 +56,7 @@ where
 pub async fn flush(
     cache: &Mutex<lru::LruCache<String, Vec<u8>>>,
     sql: &str,
-    args: &[&dyn duckdb::types::ToSql],
+    args: &[SqlValue],
     command: &Command,
 ) {
     let key = get_key(sql, args, command);

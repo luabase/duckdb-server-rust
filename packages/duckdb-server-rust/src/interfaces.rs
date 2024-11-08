@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use duckdb::types::ToSql;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::Mutex;
@@ -42,6 +43,19 @@ pub enum SqlValue {
     Text(String),
     Bool(bool),
     Null,
+}
+
+impl SqlValue {
+    // Converts SqlValue to a type that implements `ToSql`
+    pub fn as_tosql(&self) -> &dyn ToSql {
+        match self {
+            SqlValue::Int(v) => v as &dyn ToSql,
+            SqlValue::Float(v) => v as &dyn ToSql,
+            SqlValue::Text(v) => v as &dyn ToSql,
+            SqlValue::Bool(v) => v as &dyn ToSql,
+            SqlValue::Null => &None::<i32> as &dyn ToSql,
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Default)]
