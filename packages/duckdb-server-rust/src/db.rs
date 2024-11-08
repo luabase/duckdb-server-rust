@@ -1,12 +1,12 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use duckdb::DuckdbConnectionManager;
+use duckdb::{DuckdbConnectionManager, Params};
 
 #[async_trait]
 pub trait Database: Send + Sync {
     async fn execute(&self, sql: &str) -> Result<()>;
-    async fn get_json(&self, sql: &str) -> Result<Vec<u8>>;
-    async fn get_arrow(&self, sql: &str) -> Result<Vec<u8>>;
+    async fn get_json<P>(&self, sql: &str, args: P) -> Result<Vec<u8>> where P: Params;
+    async fn get_arrow<P>(&self, sql: &str, args: P) -> Result<Vec<u8>> where P: Params;
 }
 
 pub struct ConnectionPool {
@@ -33,10 +33,10 @@ impl Database for ConnectionPool {
         Ok(())
     }
 
-    async fn get_json(&self, sql: &str) -> Result<Vec<u8>> {
+    async fn get_json<P>(&self, sql: &str, args: P) -> Result<Vec<u8>> where P: Params {
         let conn = self.get()?;
         let mut stmt = conn.prepare(sql)?;
-        let arrow = stmt.query_arrow([])?;
+        let arrow = stmt.query_arrow(args)?;
 
         let buf = Vec::new();
         let mut writer = arrow::json::ArrayWriter::new(buf);
@@ -47,10 +47,11 @@ impl Database for ConnectionPool {
         Ok(writer.into_inner())
     }
 
-    async fn get_arrow(&self, sql: &str) -> Result<Vec<u8>> {
+    async fn get_arrow<P>(&self, sql: &str, args: P) -> Result<Vec<u8>> where P: Params {
         let conn = self.get()?;
         let mut stmt = conn.prepare(sql)?;
-        let arrow = stmt.query_arrow([])?;
+        let arrow = stmt.query_arrow(args)?;
+
         let schema = arrow.get_schema();
 
         let mut buffer: Vec<u8> = Vec::new();

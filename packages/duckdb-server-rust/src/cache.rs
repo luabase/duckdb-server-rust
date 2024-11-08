@@ -5,10 +5,16 @@ use tokio::sync::Mutex;
 use crate::interfaces::Command;
 
 #[must_use]
-pub fn get_key(sql: &str, command: &Command) -> String {
+pub fn get_key(sql: &str, args: &[&dyn duckdb::types::ToSql], command: &Command) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(sql);
+
+    for arg in args {
+        let arg_str = format!("{:?}", arg);
+        hasher.update(arg_str);
+    }
+
     format!(
         "{:x}.{}",
         hasher.finalize(),
@@ -19,6 +25,7 @@ pub fn get_key(sql: &str, command: &Command) -> String {
 pub async fn retrieve<F, Fut>(
     cache: &Mutex<lru::LruCache<String, Vec<u8>>>,
     sql: &str,
+    args: &[&dyn duckdb::types::ToSql],
     command: &Command,
     persist: bool,
     invalidate: bool,
@@ -28,10 +35,10 @@ where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<Vec<u8>>>,
 {
-    let key = get_key(sql, command);
+    let key = get_key(sql, args, command);
 
     if invalidate {
-        flush(&cache, sql, &command).await;
+        flush(cache, sql, args, command).await;
     } else if let Some(cached) = cache.lock().await.get(&key) {
         tracing::debug!("Cache hit {}!", key);
         return Ok(cached.clone());
@@ -49,9 +56,10 @@ where
 pub async fn flush(
     cache: &Mutex<lru::LruCache<String, Vec<u8>>>,
     sql: &str,
+    args: &[&dyn duckdb::types::ToSql],
     command: &Command,
 ) {
-    let key = get_key(sql, command);
+    let key = get_key(sql, args, command);
 
     let mut cache_lock = cache.lock().await;
     if cache_lock.pop(&key).is_some() {

@@ -34,6 +34,16 @@ pub enum Command {
     LoadBundle,
 }
 
+#[derive(Deserialize, Serialize, Debug)]
+#[serde(untagged)]
+pub enum SqlValue {
+    Int(i64),
+    Float(f64),
+    Text(String),
+    Bool(bool),
+    Null,
+}
+
 #[derive(Deserialize, Serialize, Debug, Default)]
 pub struct QueryParams {
     pub database: String,
@@ -42,6 +52,7 @@ pub struct QueryParams {
     pub persist: Option<bool>,
     pub invalidate: Option<bool>,
     pub sql: Option<String>,
+    pub args: Option<Vec<SqlValue>>,
     pub name: Option<String>,
     pub queries: Option<Vec<BundleQuery>>,
 }

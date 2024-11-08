@@ -25,7 +25,7 @@ use crate::{app, query::handle};
 
 #[test]
 fn key() {
-    let key = get_key("SELECT 1", &Command::Arrow);
+    let key = get_key("SELECT 1", &[], &Command::Arrow);
     assert_eq!(
         key,
         "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5.arrow"
