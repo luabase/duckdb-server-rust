@@ -57,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let app = app::app(db_configs, args.pool_size)?;
+    let app = app::app(db_configs, args.pool_size).await?;
 
     // TLS configuration
     let mut config = RustlsConfig::from_pem_file(

@@ -13,7 +13,7 @@ use tokio::sync::Mutex;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::{compression::CompressionLayer, trace::TraceLayer};
 
-use crate::db::ConnectionPool;
+use crate::db::{ConnectionPool, Database};
 use crate::interfaces::{AppError, AppState, DbConfig, DbState, QueryParams, QueryResponse};
 use crate::query;
 use crate::websocket;
@@ -42,7 +42,7 @@ async fn handle_post(
     query::handle(&state, params).await
 }
 
-pub fn app(db_configs: Vec<DbConfig>, pool_size: u32) -> Result<Router> {
+pub async fn app(db_configs: Vec<DbConfig>, pool_size: u32) -> Result<Router> {
     let mut states = HashMap::new();
 
     for db_config in db_configs {
@@ -51,6 +51,8 @@ pub fn app(db_configs: Vec<DbConfig>, pool_size: u32) -> Result<Router> {
         let cache = Mutex::new(lru::LruCache::new(1000.try_into()?));
 
         tracing::info!("Using DuckDB with ID: {}, Path: {}", db_config.id, db_config.path);
+
+        db.execute("INSTALL icu; LOAD icu;").await?;
 
         states.insert(
             db_config.id.clone(),
