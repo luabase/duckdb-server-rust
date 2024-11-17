@@ -7,7 +7,10 @@ use crate::query;
 
 async fn handle_message(message: String, state: &AppState) -> Result<QueryResponse, AppError> {
     let params = serde_json::from_str(&message)?;
-    query::handle(state, params).await
+    query::with_db_retry(state, params, |state, params| {
+        Box::pin(query::handle(state, params))
+    })
+    .await
 }
 
 pub async fn handle(mut socket: WebSocket, state: Arc<AppState>) {

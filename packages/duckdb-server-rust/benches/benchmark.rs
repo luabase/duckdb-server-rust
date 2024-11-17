@@ -5,16 +5,18 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::collections::HashMap;
 
-use duckdb_server::{get_key, handle, AppState, Command, ConnectionPool, DbState, QueryParams};
+use duckdb_server::{get_key, handle, AppState, Command, ConnectionPool, DbConfig, DbState, QueryParams};
 
 pub fn benchmark(c: &mut Criterion) {
-    let db = ConnectionPool::new(":memory:", 10).unwrap();
+    let config = DbConfig { id: "default".to_string(), path: ":memory:".to_string(), pool_size: 10 };
+    let db = ConnectionPool::new(&config.path, config.pool_size).unwrap();
     let cache = lru::LruCache::new(10.try_into().unwrap());
 
     let mut states = HashMap::new();
     states.insert(
         "default".to_string(),
         DbState {
+            config,
             db: Box::new(db),
             cache: Mutex::new(cache),
         },
@@ -45,7 +47,7 @@ pub fn benchmark(c: &mut Criterion) {
     group.finish();
 
     c.bench_function("get key", |b| {
-        b.iter(|| get_key("SELECT 1", &Command::Arrow))
+        b.iter(|| get_key("SELECT 1", &[], &Command::Arrow))
     });
 }
 

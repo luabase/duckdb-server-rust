@@ -38,7 +38,7 @@ impl Database for ConnectionPool {
     async fn get_json(&self, sql: &str, args: &[SqlValue]) -> Result<Vec<u8>> {
         let conn = self.get()?;
         let mut stmt = conn.prepare(sql)?;
-        let tosql_args: Vec<&dyn ToSql> = args.iter().map(|arg| arg.as_tosql()).collect();
+        let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
         let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
 
         let buf = Vec::new();
@@ -53,7 +53,7 @@ impl Database for ConnectionPool {
     async fn get_arrow(&self, sql: &str, args: &[SqlValue]) -> Result<Vec<u8>> {
         let conn = self.get()?;
         let mut stmt = conn.prepare(sql)?;
-        let tosql_args: Vec<&dyn ToSql> = args.iter().map(|arg| arg.as_tosql()).collect();
+        let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
         let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
 
         let schema = arrow.get_schema();

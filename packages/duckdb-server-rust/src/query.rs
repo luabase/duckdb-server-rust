@@ -1,5 +1,6 @@
-use anyhow::Result;
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 
 use crate::bundle::{create, load};
 use crate::cache::retrieve;
@@ -7,6 +8,36 @@ use crate::interfaces::{AppError, AppState, Command, QueryParams, QueryResponse}
 
 fn create_bundle_path(bundle_name: &str) -> PathBuf {
     Path::new(".mosaic").join("bundle").join(bundle_name)
+}
+
+pub async fn with_db_retry<F>(
+    state: &AppState,
+    params: QueryParams,
+    query_fn: F,
+) -> Result<QueryResponse, AppError>
+where
+    F: for<'a> Fn(&'a AppState, QueryParams) -> Pin<Box<dyn Future<Output = Result<QueryResponse, AppError>> + Send + 'a>>,
+{
+    let database_id = &params.database;
+    let mut attempt = 0;
+    let max_retries = 1; // Define the number of retries.
+
+    loop {
+        attempt += 1;
+
+        match query_fn(state, params.clone()).await {
+            Ok(response) => return Ok(response),
+            Err(AppError::Error(err)) if attempt <= max_retries => {
+                tracing::warn!(
+                    "Database error encountered: {}. Retrying after recreating connection. Attempt: {}",
+                    err,
+                    attempt
+                );
+                state.recreate_db(database_id).await?;
+            }
+            Err(err) => return Err(err),
+        }
+    }
 }
 
 pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryResponse, AppError> {

@@ -31,7 +31,10 @@ async fn handle_get(
     }
     else {
         // HTTP request
-        query::handle(&state, params).await
+        query::with_db_retry(&state, params, |state, params| {
+            Box::pin(query::handle(state, params))
+        })
+        .await
     }
 }
 
@@ -39,7 +42,10 @@ async fn handle_post(
     State(state): State<Arc<AppState>>,
     Json(params): Json<QueryParams>,
 ) -> Result<QueryResponse, AppError> {
-    query::handle(&state, params).await
+    query::with_db_retry(&state, params, |state, params| {
+        Box::pin(query::handle(state, params))
+    })
+    .await
 }
 
 pub async fn app(db_configs: Vec<DbConfig>) -> Result<Router> {
