@@ -16,6 +16,7 @@ pub struct AppState {
 }
 
 pub struct DbState {
+    pub config: DbConfig,
     pub db: Box<dyn Database>,
     pub cache: Mutex<lru::LruCache<String, Vec<u8>>>,
 }
@@ -23,6 +24,7 @@ pub struct DbState {
 pub struct DbConfig {
     pub id: String,
     pub path: String,
+    pub pool_size: u32,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
