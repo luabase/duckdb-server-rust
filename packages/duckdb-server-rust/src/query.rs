@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
@@ -27,13 +28,21 @@ where
 
         match query_fn(state, params.clone()).await {
             Ok(response) => return Ok(response),
-            Err(AppError::Error(err)) if attempt <= max_retries => {
-                tracing::warn!(
-                    "Database error encountered: {}. Retrying after recreating connection. Attempt: {}",
-                    err,
-                    attempt
-                );
-                state.recreate_db(database_id).await?;
+            Err(AppError::Error(err)) => {
+                // Check if the error is an IO error
+                if let Some(io_err) = err.downcast_ref::<io::Error>() {
+                    if attempt <= max_retries {
+                        tracing::warn!(
+                            "IO error encountered: {}. Retrying after recreating connection. Attempt: {}",
+                            io_err,
+                            attempt
+                        );
+                        state.recreate_db(database_id).await?;
+                        continue;
+                    }
+                }
+
+                return Err(AppError::Error(err));
             }
             Err(err) => return Err(err),
         }
