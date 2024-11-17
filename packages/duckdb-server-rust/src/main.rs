@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_configs: Vec<DbConfig> = args
         .db_configs
         .into_iter()
-        .map(|(id, path)| DbConfig { id, path })
+        .map(|(id, path)| DbConfig { id, path, pool_size: args.pool_size })
         .collect();
 
     tracing_subscriber::registry()
@@ -57,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let app = app::app(db_configs, args.pool_size).await?;
+    let app = app::app(db_configs).await?;
 
     // TLS configuration
     let mut config = RustlsConfig::from_pem_file(

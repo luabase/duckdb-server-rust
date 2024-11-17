@@ -42,11 +42,11 @@ async fn handle_post(
     query::handle(&state, params).await
 }
 
-pub async fn app(db_configs: Vec<DbConfig>, pool_size: u32) -> Result<Router> {
+pub async fn app(db_configs: Vec<DbConfig>) -> Result<Router> {
     let mut states = HashMap::new();
 
     for db_config in db_configs {
-        let effective_pool_size = if db_config.path == ":memory:" { 1 } else { pool_size };
+        let effective_pool_size = if db_config.path == ":memory:" { 1 } else { db_config.pool_size };
         let db = ConnectionPool::new(&db_config.path, effective_pool_size)?;
         let cache = Mutex::new(lru::LruCache::new(1000.try_into()?));
 
@@ -57,6 +57,7 @@ pub async fn app(db_configs: Vec<DbConfig>, pool_size: u32) -> Result<Router> {
         states.insert(
             db_config.id.clone(),
             DbState {
+                config: db_config,
                 db: Box::new(db),
                 cache,
             },
