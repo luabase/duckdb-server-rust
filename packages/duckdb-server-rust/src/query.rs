@@ -40,7 +40,6 @@ where
                     }
                 }
 
-                tracing::error!("+++ ERROR {:?}", err);
                 return Err(AppError::Error(err));
             }
             Err(err) => return Err(err),
