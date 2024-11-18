@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::io;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
@@ -29,12 +28,11 @@ where
         match query_fn(state, params.clone()).await {
             Ok(response) => return Ok(response),
             Err(AppError::Error(err)) => {
-                // Check if the error is an IO error
-                if let Some(io_err) = err.downcast_ref::<io::Error>() {
-                    if attempt <= max_retries {
+                if let Some(duckdb_err) = err.downcast_ref::<duckdb::Error>() {
+                    if matches!(duckdb_err, duckdb::Error::DuckDBFailure(_, _)) && attempt <= max_retries {
                         tracing::warn!(
-                            "IO error encountered: {}. Retrying after recreating connection. Attempt: {}",
-                            io_err,
+                            "DuckDB failure encountered: {}. Retrying after recreating connection. Attempt: {}",
+                            duckdb_err,
                             attempt
                         );
                         state.recreate_db(database_id).await?;
@@ -42,6 +40,7 @@ where
                     }
                 }
 
+                tracing::error!("+++ ERROR {:?}", err);
                 return Err(AppError::Error(err));
             }
             Err(err) => return Err(err),
