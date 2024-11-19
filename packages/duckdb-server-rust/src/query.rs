@@ -28,18 +28,18 @@ where
         match query_fn(state, params.clone()).await {
             Ok(response) => return Ok(response),
             Err(AppError::Error(err)) => {
-                if let Some(duckdb_err) = err.downcast_ref::<duckdb::Error>() {
-                    if matches!(duckdb_err, duckdb::Error::DuckDBFailure(_, _)) && attempt <= max_retries {
+                if let Some(duckdb::Error::DuckDBFailure(ffi_error, _)) = err.downcast_ref::<duckdb::Error>() {
+                    if attempt <= max_retries {
                         tracing::warn!(
                             "DuckDB failure encountered: {}. Retrying after recreating connection. Attempt: {}",
-                            duckdb_err,
+                            err,
                             attempt
                         );
+                        tracing::warn!("FFI Error is {:?}", ffi_error);
                         state.recreate_db(database_id).await?;
                         continue;
                     }
                 }
-
                 return Err(AppError::Error(err));
             }
             Err(err) => return Err(err),
