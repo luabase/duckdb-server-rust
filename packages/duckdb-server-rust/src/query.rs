@@ -28,14 +28,13 @@ where
         match query_fn(state, params.clone()).await {
             Ok(response) => return Ok(response),
             Err(AppError::Error(err)) => {
-                if let Some(duckdb::Error::DuckDBFailure(ffi_error, _)) = err.downcast_ref::<duckdb::Error>() {
-                    if attempt <= max_retries {
+                if let Some(duckdb::Error::DuckDBFailure(_, _)) = err.downcast_ref::<duckdb::Error>() {
+                    if err.to_string().to_lowercase().contains("stale file handle") && attempt <= max_retries {
                         tracing::warn!(
                             "DuckDB failure encountered: {}. Retrying after recreating connection. Attempt: {}",
                             err,
                             attempt
                         );
-                        tracing::warn!("FFI Error is {:?}", ffi_error);
                         state.recreate_db(database_id).await?;
                         continue;
                     }
