@@ -32,13 +32,11 @@ async fn handle_get(
     }
     else {
         // HTTP request
-        query::with_db_retry(&state, params, |state, params| {
-            Box::pin(query::handle(state, params))
-        })
-        .await
+        query::with_db_retry(&state, params, |state, params| Box::pin(query::handle(state, params))).await
     }
 }
 
+pub const DEFAULT_DB_ID: &str = "default";
 pub const DEFAULT_DB_PATH: &str = ":memory:";
 pub const DEFAULT_CONNECTION_POOL_SIZE: u32 = 10;
 pub const DEFAULT_CACHE_SIZE: usize = 1000;
@@ -48,19 +46,21 @@ async fn handle_post(
     State(state): State<Arc<AppState>>,
     Json(params): Json<QueryParams>,
 ) -> Result<QueryResponse, AppError> {
-    query::with_db_retry(&state, params, |state, params| {
-        Box::pin(query::handle(state, params))
-    })
-    .await
+    query::with_db_retry(&state, params, |state, params| Box::pin(query::handle(state, params))).await
 }
 
 pub async fn app(db_configs: Vec<DbConfig>) -> Result<Router> {
     let mut states = HashMap::new();
 
     for db_config in db_configs {
-        let effective_pool_size = if db_config.path == ":memory:" { 1 } else { db_config.connection_pool_size };
+        let effective_pool_size = if db_config.path == ":memory:" {
+            1
+        }
+        else {
+            db_config.connection_pool_size
+        };
         let db = ConnectionPool::new(&db_config.path, effective_pool_size)?;
-        let cache = Mutex::new(lru::LruCache::new(db_config.cache_size));
+        let cache = Mutex::new(lru::LruCache::new(db_config.cache_size.try_into()?));
 
         tracing::info!("Using DuckDB with ID: {}, Path: {}", db_config.id, db_config.path);
 
