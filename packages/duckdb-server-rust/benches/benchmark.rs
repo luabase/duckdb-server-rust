@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use duckdb_server::{get_key, handle, AppState, Command, ConnectionPool, DbConfig, DbState, QueryParams};
 
 pub fn benchmark(c: &mut Criterion) {
-    let config = DbConfig { id: "default".to_string(), path: ":memory:".to_string(), pool_size: 10 };
+    let config = DbConfig { id: "default".to_string(), path: ":memory:".to_string(), connection_pool_size: 10 };
     let db = ConnectionPool::new(&config.path, config.pool_size).unwrap();
     let cache = lru::LruCache::new(10.try_into().unwrap());
 

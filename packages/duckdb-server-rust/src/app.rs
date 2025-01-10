@@ -1,6 +1,6 @@
 use anyhow::Result;
 use axum::{
-    extract::{Query, State, WebSocketUpgrade},
+    extract::{ws::rejection::WebSocketUpgradeRejection, Query, State, WebSocketUpgrade},
     http::Method,
     response::Json,
     routing::get,
@@ -18,12 +18,13 @@ use crate::interfaces::{AppError, AppState, DbConfig, DbState, QueryParams, Quer
 use crate::query;
 use crate::websocket;
 
+#[axum::debug_handler]
 async fn handle_get(
     State(state): State<Arc<AppState>>,
-    ws: Option<WebSocketUpgrade>,
+    ws: Result<WebSocketUpgrade, WebSocketUpgradeRejection>,
     Query(params): Query<QueryParams>,
 ) -> Result<QueryResponse, AppError> {
-    if let Some(ws) = ws {
+    if let Ok(ws) = ws {
         // WebSocket upgrade
         Ok(QueryResponse::Response(
             ws.on_upgrade(|socket| websocket::handle(socket, state)),
@@ -38,6 +39,11 @@ async fn handle_get(
     }
 }
 
+pub const DEFAULT_DB_PATH: &str = ":memory:";
+pub const DEFAULT_CONNECTION_POOL_SIZE: u32 = 10;
+pub const DEFAULT_CACHE_SIZE: usize = 1000;
+
+#[axum::debug_handler]
 async fn handle_post(
     State(state): State<Arc<AppState>>,
     Json(params): Json<QueryParams>,
@@ -52,9 +58,9 @@ pub async fn app(db_configs: Vec<DbConfig>) -> Result<Router> {
     let mut states = HashMap::new();
 
     for db_config in db_configs {
-        let effective_pool_size = if db_config.path == ":memory:" { 1 } else { db_config.pool_size };
+        let effective_pool_size = if db_config.path == ":memory:" { 1 } else { db_config.connection_pool_size };
         let db = ConnectionPool::new(&db_config.path, effective_pool_size)?;
-        let cache = Mutex::new(lru::LruCache::new(1000.try_into()?));
+        let cache = Mutex::new(lru::LruCache::new(db_config.cache_size));
 
         tracing::info!("Using DuckDB with ID: {}, Path: {}", db_config.id, db_config.path);
 
@@ -84,7 +90,7 @@ pub async fn app(db_configs: Vec<DbConfig>) -> Result<Router> {
     // Router setup
     Ok(Router::new()
         .route("/", get(handle_get).post(handle_post))
-        .with_state(app_state) // Use shared state across routes
+        .with_state(app_state)
         .layer(cors)
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http()))

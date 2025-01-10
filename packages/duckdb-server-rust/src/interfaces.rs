@@ -22,7 +22,7 @@ impl AppState {
 
         if let Some(db_state) = states.get(db_id) {
             let config = db_state.config.clone();
-            let effective_pool_size = if config.path == ":memory:" { 1 } else { config.pool_size };
+            let effective_pool_size = if config.path == ":memory:" { 1 } else { config.connection_pool_size };
 
             let db = ConnectionPool::new(&config.path, effective_pool_size)?;
             let cache = Mutex::new(lru::LruCache::new(1000.try_into()?));
@@ -57,7 +57,8 @@ pub struct DbState {
 pub struct DbConfig {
     pub id: String,
     pub path: String,
-    pub pool_size: u32,
+    pub cache_size: usize,
+    pub connection_pool_size: u32,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

@@ -3,10 +3,14 @@ use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
 use listenfd::ListenFd;
 use std::net::TcpListener;
-use std::{net::Ipv4Addr, net::SocketAddr, path::PathBuf};
+use std::{net::IpAddr, net::Ipv4Addr, net::SocketAddr, path::PathBuf};
 use tokio::net;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use crate::app::DEFAULT_CACHE_SIZE;
+use crate::app::DEFAULT_CONNECTION_POOL_SIZE;
+use crate::app::DEFAULT_DB_ID;
+use crate::app::DEFAULT_DB_PATH;
 use crate::interfaces::DbConfig;
 
 mod app;
@@ -18,15 +22,27 @@ mod query;
 mod websocket;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about)]
+#[command(version, about, long_about = None)]
 struct Args {
     /// List of databases in the format `id=path`
     #[arg(long = "db", value_parser = parse_db, num_args = 1..)]
     db_configs: Vec<(String, String)>,
 
-    /// Size of the connection pool (default: 1)
-    #[arg(short, long, default_value_t = 1)]
-    pool_size: u32,
+    /// HTTP Address
+    #[arg(short, long, default_value_t = Ipv4Addr::LOCALHOST.into())]
+    address: IpAddr,
+
+    /// HTTP Port
+    #[arg(short, long, default_value_t = 3000)]
+    port: u16,
+
+    /// Max connection pool size
+    #[arg(long, default_value_t = DEFAULT_CONNECTION_POOL_SIZE)]
+    connection_pool_size: u32,
+
+    /// Max number of cache entries
+    #[arg(long, default_value_t = DEFAULT_CACHE_SIZE)]
+    cache_size: usize,
 }
 
 fn parse_db(s: &str) -> Result<(String, String), String> {
@@ -42,11 +58,22 @@ fn parse_db(s: &str) -> Result<(String, String), String> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let db_configs: Vec<DbConfig> = args
-        .db_configs
-        .into_iter()
-        .map(|(id, path)| DbConfig { id, path, pool_size: args.pool_size })
-        .collect();
+    let db_configs: Vec<DbConfig> = if args.db_configs.is_empty() {
+        vec![(
+            DEFAULT_DB_ID.to_string(),
+            DEFAULT_DB_PATH.to_string()
+        )]
+    } else {
+        args.db_configs
+    }
+    .into_iter()
+    .map(|(id, path)| DbConfig {
+        id,
+        path,
+        cache_size: args.cache_size,
+        connection_pool_size: args.connection_pool_size
+    })
+    .collect();
 
     tracing_subscriber::registry()
         .with(
@@ -67,20 +94,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await;
 
     if config.is_err() {
-        // Try current directory for HTTPS keys if env didn't work
+        // try current directory for HTTPS keys if env didn't work
         config = RustlsConfig::from_pem_file("./localhost.pem", "./localhost-key.pem").await;
     }
 
     // Listenfd setup
-    let addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 3000);
+    let addr = SocketAddr::new(args.address, args.port);
     let mut listenfd = ListenFd::from_env();
     let listener = match listenfd.take_tcp_listener(0)? {
-        // If we are given a tcp listener on listen fd 0, we use that one
+        // if we are given a tcp listener on listen fd 0, we use that one
         Some(listener) => {
             listener.set_nonblocking(true)?;
             listener
         }
-        // Otherwise fall back to local listening
+        // otherwise fall back to local listening
         None => TcpListener::bind(addr)?,
     };
 

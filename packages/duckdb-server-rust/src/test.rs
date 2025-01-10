@@ -92,7 +92,7 @@ async fn get_arrow() -> Result<()> {
 
 #[tokio::test]
 async fn select_1_get() -> Result<()> {
-    let app = app::app()?;
+    let app = app::app(None, None, None)?;
 
     let response = app
         .oneshot(
@@ -112,7 +112,7 @@ async fn select_1_get() -> Result<()> {
 
 #[tokio::test]
 async fn select_1_post() -> Result<()> {
-    let app = app::app()?;
+    let app = app::app(None, None, None)?;
 
     let response = app
         .oneshot(
@@ -136,7 +136,7 @@ async fn select_1_post() -> Result<()> {
 
 #[tokio::test]
 async fn query_arrow() -> Result<()> {
-    let app = app::app()?;
+    let app = app::app(None, None, None)?;
 
     let response = app
         .oneshot(
@@ -175,7 +175,7 @@ async fn create_and_load_bundle() -> Result<()> {
     let cache = &Mutex::new(lru::LruCache::new(10.try_into()?));
 
     let queries = vec![
-        Query {sql: r#"CREATE TEMP TABLE IF NOT EXISTS flights AS SELECT * FROM read_parquet("data/flights-200k.parquet")"#.to_string(), alias: None},
+        Query {sql: r#"CREATE TABLE IF NOT EXISTS flights AS SELECT * FROM read_parquet("data/flights-200k.parquet")"#.to_string(), alias: None},
         Query {sql: r#"SELECT count(*) FROM "flights""#.to_string(), alias: None},
     ];
 
