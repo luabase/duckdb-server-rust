@@ -1,7 +1,9 @@
 use anyhow::Result;
 use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
+use glob::glob;
 use listenfd::ListenFd;
+use std::fs;
 use std::net::TcpListener;
 use std::{net::IpAddr, net::Ipv4Addr, net::SocketAddr, path::PathBuf};
 use tokio::net;
@@ -28,6 +30,9 @@ struct Args {
     #[arg(long = "db", value_parser = parse_db, num_args = 1..)]
     db_configs: Vec<(String, String)>,
 
+    #[arg(long = "db-glob")]
+    db_glob: Option<String>,
+
     /// HTTP Address
     #[arg(short, long, default_value_t = Ipv4Addr::LOCALHOST.into())]
     address: IpAddr,
@@ -49,42 +54,61 @@ fn parse_db(s: &str) -> Result<(String, String), String> {
     let parts: Vec<&str> = s.splitn(2, '=').collect();
     if parts.len() != 2 {
         Err(format!("Invalid format for --db argument: {}", s))
-    } else {
+    }
+    else {
         Ok((parts[0].to_string(), parts[1].to_string()))
     }
+}
+
+fn find_duckdb_files(pattern: &str) -> Vec<PathBuf> {
+    glob(pattern)
+        .unwrap_or_else(|_| panic!("Invalid glob pattern: {}", pattern))
+        .filter_map(Result::ok)
+        .filter(|path| fs::metadata(path).map(|meta| meta.is_file()).unwrap_or(false))
+        .collect()
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let db_configs: Vec<DbConfig> = if args.db_configs.is_empty() {
-        vec![(
-            DEFAULT_DB_ID.to_string(),
-            DEFAULT_DB_PATH.to_string()
-        )]
-    } else {
-        args.db_configs
+    let mut db_configs: Vec<(String, String)> = if args.db_configs.is_empty() {
+        vec![(DEFAULT_DB_ID.to_string(), DEFAULT_DB_PATH.to_string())]
     }
-    .into_iter()
-    .map(|(id, path)| DbConfig {
-        id,
-        path,
-        cache_size: args.cache_size,
-        connection_pool_size: args.connection_pool_size
-    })
-    .collect();
+    else {
+        args.db_configs
+    };
+
+    if let Some(glob_pattern) = args.db_glob {
+        db_configs.extend(find_duckdb_files(&glob_pattern).into_iter().map(|path| {
+            let id = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            (id, path.to_string_lossy().to_string())
+        }));
+    }
+
+    let configs: Vec<DbConfig> = db_configs
+        .into_iter()
+        .map(|(id, path)| DbConfig {
+            id,
+            path,
+            cache_size: args.cache_size,
+            connection_pool_size: args.connection_pool_size,
+        })
+        .collect();
 
     tracing_subscriber::registry()
         .with(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                "duckdb_server=debug,tower_http=debug,axum::rejection=trace".into()
-            }),
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "duckdb_server=debug,tower_http=debug,axum::rejection=trace".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let app = app::app(db_configs).await?;
+    let app = app::app(configs).await?;
 
     // TLS configuration
     let mut config = RustlsConfig::from_pem_file(
