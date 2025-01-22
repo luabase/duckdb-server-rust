@@ -129,7 +129,7 @@ impl AppState {
             };
 
             let db = ConnectionPool::new(&config.path, effective_pool_size)?;
-            let cache = Mutex::new(lru::LruCache::new(1000.try_into()?));
+            let cache = Mutex::new(lru::LruCache::new(db_state.config.cache_size.try_into()?));
 
             db.execute("INSTALL icu; LOAD icu;").await?;
 
