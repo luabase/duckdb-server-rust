@@ -1,9 +1,7 @@
 use anyhow::Result;
 use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
-use glob::glob;
 use listenfd::ListenFd;
-use std::fs;
 use std::net::TcpListener;
 use std::{net::IpAddr, net::Ipv4Addr, net::SocketAddr, path::PathBuf};
 use tokio::net;
@@ -13,7 +11,7 @@ use crate::app::DEFAULT_CACHE_SIZE;
 use crate::app::DEFAULT_CONNECTION_POOL_SIZE;
 use crate::app::DEFAULT_DB_ID;
 use crate::app::DEFAULT_DB_PATH;
-use crate::interfaces::DbConfig;
+use crate::interfaces::{DbDefaults, DbPath};
 
 mod app;
 mod bundle;
@@ -21,6 +19,7 @@ mod cache;
 mod db;
 mod interfaces;
 mod query;
+mod state;
 mod websocket;
 
 #[derive(Parser, Debug)]
@@ -28,10 +27,10 @@ mod websocket;
 struct Args {
     /// List of databases in the format `id=path`
     #[arg(long = "db", value_parser = parse_db, num_args = 1..)]
-    db_configs: Vec<(String, String)>,
+    db_paths: Vec<(String, String)>,
 
-    #[arg(long = "db-glob")]
-    db_glob: Option<String>,
+    #[arg(long = "db-dynamic-root", value_parser = parse_db_dynamic_roots, num_args = 1)]
+    db_dynamic_roots: Vec<(String, String)>,
 
     /// HTTP Address
     #[arg(short, long, default_value_t = Ipv4Addr::LOCALHOST.into())]
@@ -60,45 +59,46 @@ fn parse_db(s: &str) -> Result<(String, String), String> {
     }
 }
 
-fn find_duckdb_files(pattern: &str) -> Vec<PathBuf> {
-    glob(pattern)
-        .unwrap_or_else(|_| panic!("Invalid glob pattern: {}", pattern))
-        .filter_map(Result::ok)
-        .filter(|path| fs::metadata(path).map(|meta| meta.is_file()).unwrap_or(false))
-        .collect()
+fn parse_db_dynamic_roots(s: &str) -> Result<(String, String), String> {
+    let parts: Vec<&str> = s.splitn(2, '=').collect();
+    if parts.len() != 2 {
+        Err(format!("Invalid format for --db-dynamic-root argument: {}", s))
+    }
+    else {
+        Ok((parts[0].to_string(), parts[1].to_string()))
+    }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let mut db_configs: Vec<(String, String)> = if args.db_configs.is_empty() {
+    let db_args: Vec<(String, String)> = if args.db_paths.is_empty() {
         vec![(DEFAULT_DB_ID.to_string(), DEFAULT_DB_PATH.to_string())]
     }
     else {
-        args.db_configs
+        args.db_paths
     };
 
-    if let Some(glob_pattern) = args.db_glob {
-        db_configs.extend(find_duckdb_files(&glob_pattern).into_iter().map(|path| {
-            let id = path
-                .file_stem()
-                .and_then(|stem| stem.to_str())
-                .unwrap_or("unknown")
-                .to_string();
-            (id, path.to_string_lossy().to_string())
-        }));
-    }
-
-    let configs: Vec<DbConfig> = db_configs
+    let mut db_paths: Vec<DbPath> = db_args
         .into_iter()
-        .map(|(id, path)| DbConfig {
+        .map(|(id, path)| DbPath {
             id,
             path,
-            cache_size: args.cache_size,
-            connection_pool_size: args.connection_pool_size,
+            is_dynamic: false,
         })
         .collect();
+
+    db_paths.extend(args.db_dynamic_roots.into_iter().map(|(id, path)| DbPath {
+        id,
+        path,
+        is_dynamic: true,
+    }));
+
+    let db_defaults = DbDefaults {
+        cache_size: args.cache_size,
+        connection_pool_size: args.connection_pool_size,
+    };
 
     tracing_subscriber::registry()
         .with(
@@ -108,7 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let app = app::app(configs).await?;
+    let app = app::app(db_defaults, db_paths).await?;
 
     // TLS configuration
     let mut config = RustlsConfig::from_pem_file(

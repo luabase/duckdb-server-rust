@@ -13,9 +13,9 @@ use tokio::sync::Mutex;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::{compression::CompressionLayer, trace::TraceLayer};
 
-use crate::db::{ConnectionPool, Database};
-use crate::interfaces::{AppError, AppState, DbConfig, DbState, QueryParams, QueryResponse};
+use crate::interfaces::{AppError, DbDefaults, DbPath, QueryParams, QueryResponse};
 use crate::query;
+use crate::state::AppState;
 use crate::websocket;
 
 #[axum::debug_handler]
@@ -49,35 +49,11 @@ async fn handle_post(
     query::with_db_retry(&state, params, |state, params| Box::pin(query::handle(state, params))).await
 }
 
-pub async fn app(db_configs: Vec<DbConfig>) -> Result<Router> {
-    let mut states = HashMap::new();
-
-    for db_config in db_configs {
-        let effective_pool_size = if db_config.path == ":memory:" {
-            1
-        }
-        else {
-            db_config.connection_pool_size
-        };
-        let db = ConnectionPool::new(&db_config.path, effective_pool_size)?;
-        let cache = Mutex::new(lru::LruCache::new(db_config.cache_size.try_into()?));
-
-        tracing::info!("Using DuckDB with ID: {}, Path: {}", db_config.id, db_config.path);
-
-        db.execute("INSTALL icu; LOAD icu;").await?;
-
-        states.insert(
-            db_config.id.clone(),
-            DbState {
-                config: db_config,
-                db: Box::new(db),
-                cache,
-            },
-        );
-    }
-
+pub async fn app(defaults: DbDefaults, db_paths: Vec<DbPath>) -> Result<Router> {
     let app_state = Arc::new(AppState {
-        states: Mutex::new(states),
+        defaults,
+        paths: db_paths.into_iter().map(|db| (db.id.clone(), db)).collect(),
+        states: Mutex::new(HashMap::new()),
     });
 
     // CORS setup

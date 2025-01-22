@@ -1,4 +1,3 @@
-use anyhow::Result;
 use axum::{
     body::Bytes,
     http::StatusCode,
@@ -6,52 +5,10 @@ use axum::{
 };
 use duckdb::types::ToSql;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use tokio::sync::Mutex;
 
 use crate::bundle::Query as BundleQuery;
-use crate::db::{ConnectionPool, Database};
-
-pub struct AppState {
-    pub states: Mutex<HashMap<String, DbState>>,
-}
-
-impl AppState {
-    pub async fn recreate_db(&self, db_id: &str) -> Result<()> {
-        let mut states = self.states.lock().await;
-
-        if let Some(db_state) = states.get(db_id) {
-            let config = db_state.config.clone();
-            let effective_pool_size = if config.path == ":memory:" { 1 } else { config.connection_pool_size };
-
-            let db = ConnectionPool::new(&config.path, effective_pool_size)?;
-            let cache = Mutex::new(lru::LruCache::new(1000.try_into()?));
-
-            db.execute("INSTALL icu; LOAD icu;").await?;
-
-            tracing::info!("Recreated DuckDB with ID: {}, Path: {}", config.id, config.path);
-
-            states.insert(
-                db_id.to_string(),
-                DbState {
-                    config,
-                    db: Box::new(db),
-                    cache,
-                },
-            );
-        } else {
-            return Err(anyhow::anyhow!("Database ID {} not found", db_id));
-        }
-
-        Ok(())
-    }
-}
-
-pub struct DbState {
-    pub config: DbConfig,
-    pub db: Box<dyn Database>,
-    pub cache: Mutex<lru::LruCache<String, Vec<u8>>>,
-}
+use crate::db::Database;
 
 #[derive(Debug, Clone)]
 pub struct DbConfig {
@@ -59,6 +16,25 @@ pub struct DbConfig {
     pub path: String,
     pub cache_size: usize,
     pub connection_pool_size: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct DbDefaults {
+    pub cache_size: usize,
+    pub connection_pool_size: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct DbPath {
+    pub id: String,
+    pub path: String,
+    pub is_dynamic: bool,
+}
+
+pub struct DbState {
+    pub config: DbConfig,
+    pub db: Box<dyn Database>,
+    pub cache: Mutex<lru::LruCache<String, Vec<u8>>>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -97,6 +73,8 @@ impl SqlValue {
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct QueryParams {
     pub database: String,
+    #[serde(rename = "dynamic")]
+    pub dynamic_id: Option<String>,
     #[serde(rename = "type")]
     pub query_type: Option<Command>,
     pub persist: Option<bool>,

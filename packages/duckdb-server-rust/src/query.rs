@@ -4,21 +4,20 @@ use std::pin::Pin;
 
 use crate::bundle::{create, load};
 use crate::cache::retrieve;
-use crate::interfaces::{AppError, AppState, Command, QueryParams, QueryResponse};
+use crate::interfaces::{AppError, Command, QueryParams, QueryResponse};
+use crate::state::AppState;
 
 fn create_bundle_path(bundle_name: &str) -> PathBuf {
     Path::new(".mosaic").join("bundle").join(bundle_name)
 }
 
-pub async fn with_db_retry<F>(
-    state: &AppState,
-    params: QueryParams,
-    query_fn: F,
-) -> Result<QueryResponse, AppError>
+pub async fn with_db_retry<F>(state: &AppState, params: QueryParams, query_fn: F) -> Result<QueryResponse, AppError>
 where
-    F: for<'a> Fn(&'a AppState, QueryParams) -> Pin<Box<dyn Future<Output = Result<QueryResponse, AppError>> + Send + 'a>>,
+    F: for<'a> Fn(
+        &'a AppState,
+        QueryParams,
+    ) -> Pin<Box<dyn Future<Output = Result<QueryResponse, AppError>> + Send + 'a>>,
 {
-    let database_id = &params.database;
     let mut attempt = 0;
     let max_retries = 1; // Define the number of retries.
 
@@ -35,7 +34,9 @@ where
                             err,
                             attempt
                         );
-                        state.recreate_db(database_id).await?;
+                        state
+                            .recreate_db(params.dynamic_id.as_deref(), &params.database)
+                            .await?;
                         continue;
                     }
                 }
@@ -48,10 +49,15 @@ where
 
 pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryResponse, AppError> {
     let command = &params.query_type;
-    let database_id = &params.database;
 
-    let states = state.states.lock().await;
-    let db_state = states.get(database_id).ok_or(AppError::BadRequest)?;
+    let db_state = if let Some(dynamic_id) = &params.dynamic_id {
+        state
+            .get_or_create_dynamic_db_state(dynamic_id, &params.database)
+            .await?
+    }
+    else {
+        state.get_or_create_static_db_state(&params.database).await?
+    };
 
     tracing::info!("Command: '{:?}', Params: '{:?}'", command, params);
 
@@ -61,12 +67,19 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
                 let persist = params.persist.unwrap_or(true);
                 let invalidate = params.invalidate.unwrap_or(false);
                 let args = params.args.unwrap_or_default();
-                let buffer = retrieve(&db_state.cache, sql, &args, &Command::Arrow, persist, invalidate, || {
-                    db_state.db.get_arrow(sql, &args)
-                })
+                let buffer = retrieve(
+                    &db_state.cache,
+                    sql,
+                    &args,
+                    &Command::Arrow,
+                    persist,
+                    invalidate,
+                    || db_state.db.get_arrow(sql, &args),
+                )
                 .await?;
                 Ok(QueryResponse::Arrow(buffer))
-            } else {
+            }
+            else {
                 Err(AppError::BadRequest)
             }
         }
@@ -74,7 +87,8 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
             if let Some(sql) = params.sql.as_deref() {
                 db_state.db.execute(sql).await?;
                 Ok(QueryResponse::Empty)
-            } else {
+            }
+            else {
                 Err(AppError::BadRequest)
             }
         }
@@ -90,12 +104,14 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
 
                 let string = if json.is_empty() {
                     "[]".to_string()
-                } else {
+                }
+                else {
                     String::from_utf8(json)?
                 };
 
                 Ok(QueryResponse::Json(string))
-            } else {
+            }
+            else {
                 Err(AppError::BadRequest)
             }
         }
@@ -105,7 +121,8 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
                 let bundle_path = create_bundle_path(&bundle_name);
                 create(db_state.db.as_ref(), &db_state.cache, queries, &bundle_path).await?;
                 Ok(QueryResponse::Empty)
-            } else {
+            }
+            else {
                 Err(AppError::BadRequest)
             }
         }
@@ -114,7 +131,8 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
                 let bundle_path = create_bundle_path(&bundle_name);
                 load(db_state.db.as_ref(), &db_state.cache, &bundle_path).await?;
                 Ok(QueryResponse::Empty)
-            } else {
+            }
+            else {
                 Err(AppError::BadRequest)
             }
         }

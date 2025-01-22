@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use duckdb::{DuckdbConnectionManager, params_from_iter, types::ToSql};
+use duckdb::{params_from_iter, types::ToSql, DuckdbConnectionManager};
 
 use crate::interfaces::SqlValue;
 
