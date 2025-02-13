@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use duckdb::{params_from_iter, types::ToSql, DuckdbConnectionManager};
+use duckdb::{arrow, params_from_iter, types::ToSql, DuckdbConnectionManager};
 
 use crate::interfaces::SqlValue;
 
@@ -42,7 +42,7 @@ impl Database for ConnectionPool {
         let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
 
         let buf = Vec::new();
-        let mut writer = arrow::json::ArrayWriter::new(buf);
+        let mut writer = arrow_json::ArrayWriter::new(buf);
         for batch in arrow {
             writer.write(&batch)?;
         }
@@ -61,7 +61,7 @@ impl Database for ConnectionPool {
         let mut buffer: Vec<u8> = Vec::new();
         {
             let schema_ref = schema.as_ref();
-            let mut writer = arrow::ipc::writer::FileWriter::try_new(&mut buffer, schema_ref)?;
+            let mut writer = arrow_ipc::writer::FileWriter::try_new(&mut buffer, schema_ref)?;
 
             for batch in arrow {
                 writer.write(&batch)?;
