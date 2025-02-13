@@ -14,13 +14,15 @@ exclude = [
 
 [dependencies]
 anyhow = "1.0"
-arrow = "53.3"
+arrow-json = "54.1.0"
+arrow-array = "54.1.0"
+arrow-ipc = "54.1.0"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["http1", "http2", "ws", "json", "tokio", "tracing", "macros"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 axum-server-dual-protocol = "0.7"
 clap = { version = "4.5", features = ["derive"] }
-duckdb = { git = "https://github.com/luabase/duckdb-rs.git", branch = "main", features = ["bundled", "csv", "json", "parquet", "url", "r2d2"] }
+duckdb = { version = "1.2.0", features = ["bundled", "csv", "json", "parquet", "url", "r2d2"] }
 futures = "0.3"
 glob = "0.3.2"
 listenfd = "1.0"
