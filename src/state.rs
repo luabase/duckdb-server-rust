@@ -7,6 +7,15 @@ use tokio::sync::Mutex;
 use crate::db::{ConnectionPool, Database};
 use crate::interfaces::{AppError, DbConfig, DbDefaults, DbPath, DbState};
 
+const AUTOINSTALL_QUERY: &str = r#"
+SET autoinstall_known_extensions=1;
+SET autoload_known_extensions=1;
+INSTALL icu; LOAD icu;
+INSTALL json; LOAD json;
+INSTALL httpfs; LOAD httpfs;
+INSTALL iceberg; LOAD iceberg;
+"#;
+
 pub struct AppState {
     pub defaults: DbDefaults,
     pub paths: HashMap<String, DbPath>,
@@ -44,7 +53,7 @@ impl AppState {
         let db = ConnectionPool::new(path.to_str().unwrap(), self.defaults.connection_pool_size)?;
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
 
-        db.execute("INSTALL icu; LOAD icu;").await?;
+        db.execute(AUTOINSTALL_QUERY).await?;
 
         let new_state = Arc::new(DbState {
             config: DbConfig {
@@ -92,7 +101,7 @@ impl AppState {
         let db = ConnectionPool::new(&db_path.path, effective_pool_size)?;
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
 
-        db.execute("INSTALL icu; LOAD icu;").await?;
+        db.execute(AUTOINSTALL_QUERY).await?;
 
         let new_state = Arc::new(DbState {
             config: DbConfig {
@@ -131,7 +140,7 @@ impl AppState {
             let db = ConnectionPool::new(&config.path, effective_pool_size)?;
             let cache = Mutex::new(lru::LruCache::new(db_state.config.cache_size.try_into()?));
 
-            db.execute("INSTALL icu; LOAD icu;").await?;
+            db.execute(AUTOINSTALL_QUERY).await?;
 
             tracing::info!("Recreated DuckDB with ID: {}, Path: {}", config.id, config.path);
 
