@@ -56,14 +56,14 @@ pub async fn app(defaults: DbDefaults, db_paths: Vec<DbPath>) -> Result<Router> 
         states: Mutex::new(HashMap::new()),
     });
 
-    // CORS setup
+    tracing::info!("Loaded paths: {:?}", app_state.paths);
+
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods([Method::OPTIONS, Method::POST, Method::GET])
         .allow_headers(Any)
         .max_age(Duration::from_secs(60 * 60 * 24));
 
-    // Router setup
     Ok(Router::new()
         .route("/", get(handle_get).post(handle_post))
         .with_state(app_state)

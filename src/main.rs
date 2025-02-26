@@ -130,8 +130,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    tracing::info!("Loaded DB paths: {:?}", db_paths);
-
     let app = app::app(db_defaults, db_paths).await?;
 
     // TLS configuration
