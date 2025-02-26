@@ -27,6 +27,7 @@ pub struct DbDefaults {
 #[derive(Debug, Clone)]
 pub struct DbPath {
     pub id: String,
+    pub primary_id: String,
     pub path: String,
     pub is_dynamic: bool,
 }

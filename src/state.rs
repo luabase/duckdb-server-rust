@@ -28,17 +28,16 @@ impl AppState {
         dynamic: &str,
         database: &str,
     ) -> Result<Arc<DbState>, AppError> {
-        let id = format!("{}::{}", dynamic, database);
-        let mut states = self.states.lock().await;
-
-        if let Some(state) = states.get(&id) {
-            return Ok(Arc::clone(state));
-        }
-
         let db_path = self
             .paths
             .get(dynamic)
             .ok_or_else(|| anyhow::anyhow!("Database ID {} not found", dynamic))?;
+
+        let mut states = self.states.lock().await;
+
+        if let Some(state) = states.get(&db_path.path) {
+            return Ok(Arc::clone(state));
+        }
 
         if !db_path.is_dynamic {
             return Err(AppError::Error(anyhow::anyhow!(
@@ -57,7 +56,7 @@ impl AppState {
 
         let new_state = Arc::new(DbState {
             config: DbConfig {
-                id: id.to_string(),
+                id: db_path.primary_id.clone(),
                 path: path.to_str().unwrap().to_string(),
                 cache_size: self.defaults.cache_size,
                 connection_pool_size: self.defaults.connection_pool_size,
@@ -66,7 +65,7 @@ impl AppState {
             cache,
         });
 
-        states.insert(id.to_string(), Arc::clone(&new_state));
+        states.insert(db_path.path.to_string(), Arc::clone(&new_state));
         Ok(new_state)
     }
 
