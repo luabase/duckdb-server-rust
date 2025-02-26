@@ -29,8 +29,9 @@ struct Args {
     #[arg(long = "db", value_parser = parse_db, num_args = 1..)]
     db_paths: Vec<(String, String)>,
 
-    #[arg(long = "db-dynamic-root", value_parser = parse_db_dynamic_roots, num_args = 1)]
-    db_dynamic_roots: Vec<(String, String)>,
+    /// Dynamic databases in the format `id1,id2,id3=path`
+    #[arg(long = "db-dynamic-root", value_parser = parse_db_dynamic_roots, num_args = 1..)]
+    db_dynamic_roots: Vec<(String, Vec<String>, String)>,
 
     /// HTTP Address
     #[arg(short, long, default_value_t = Ipv4Addr::LOCALHOST.into())]
@@ -59,14 +60,22 @@ fn parse_db(s: &str) -> Result<(String, String), String> {
     }
 }
 
-fn parse_db_dynamic_roots(s: &str) -> Result<(String, String), String> {
+fn parse_db_dynamic_roots(s: &str) -> Result<(String, Vec<String>, String), String> {
     let parts: Vec<&str> = s.splitn(2, '=').collect();
     if parts.len() != 2 {
-        Err(format!("Invalid format for --db-dynamic-root argument: {}", s))
+        return Err(format!("Invalid format for --db-dynamic-root argument: {}", s));
     }
-    else {
-        Ok((parts[0].to_string(), parts[1].to_string()))
+
+    let id_parts: Vec<&str> = parts[0].split(',').collect();
+    if id_parts.is_empty() {
+        return Err(format!("At least one ID is required before '=' in argument: {}", s));
     }
+
+    let primary_id = id_parts[0].to_string();
+    let aliases = id_parts[1..].iter().map(|&id| id.to_string()).collect();
+    let path = parts[1].to_string();
+
+    Ok((primary_id, aliases, path))
 }
 
 #[tokio::main]
@@ -83,17 +92,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut db_paths: Vec<DbPath> = db_args
         .into_iter()
         .map(|(id, path)| DbPath {
-            id,
+            id: id.clone(),
+            primary_id: id.clone(),
             path,
             is_dynamic: false,
         })
         .collect();
 
-    db_paths.extend(args.db_dynamic_roots.into_iter().map(|(id, path)| DbPath {
-        id,
-        path,
-        is_dynamic: true,
-    }));
+    for (primary_id, aliases, path) in args.db_dynamic_roots {
+        db_paths.push(DbPath {
+            id: primary_id.clone(),
+            primary_id: primary_id.clone(),
+            path: path.clone(),
+            is_dynamic: true,
+        });
+
+        for alias in aliases {
+            db_paths.push(DbPath {
+                id: alias,
+                primary_id: primary_id.clone(),
+                path: path.clone(),
+                is_dynamic: true,
+            });
+        }
+    }
 
     let db_defaults = DbDefaults {
         cache_size: args.cache_size,
