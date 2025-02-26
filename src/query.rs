@@ -64,7 +64,7 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
     match command {
         Some(Command::Arrow) => {
             if let Some(sql) = params.sql.as_deref() {
-                let persist = params.persist.unwrap_or(true);
+                let persist = params.persist.unwrap_or(false);
                 let invalidate = params.invalidate.unwrap_or(false);
                 let args = params.args.unwrap_or_default();
                 let buffer = retrieve(
@@ -94,7 +94,7 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
         }
         Some(Command::Json) => {
             if let Some(sql) = params.sql.as_deref() {
-                let persist = params.persist.unwrap_or(true);
+                let persist = params.persist.unwrap_or(false);
                 let invalidate = params.invalidate.unwrap_or(false);
                 let args = params.args.unwrap_or_default();
                 let json: Vec<u8> = retrieve(&db_state.cache, sql, &args, &Command::Json, persist, invalidate, || {
