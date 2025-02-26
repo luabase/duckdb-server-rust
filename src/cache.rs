@@ -39,7 +39,8 @@ where
 
     if invalidate {
         flush(cache, sql, args, command).await;
-    } else if let Some(cached) = cache.lock().await.get(&key) {
+    }
+    else if let Some(cached) = cache.lock().await.get(&key) {
         tracing::debug!("Cache hit {}!", key);
         return Ok(cached.clone());
     }
@@ -53,18 +54,14 @@ where
     Ok(result)
 }
 
-pub async fn flush(
-    cache: &Mutex<lru::LruCache<String, Vec<u8>>>,
-    sql: &str,
-    args: &[SqlValue],
-    command: &Command,
-) {
+pub async fn flush(cache: &Mutex<lru::LruCache<String, Vec<u8>>>, sql: &str, args: &[SqlValue], command: &Command) {
     let key = get_key(sql, args, command);
 
     let mut cache_lock = cache.lock().await;
     if cache_lock.pop(&key).is_some() {
         tracing::info!("Cache entry cleared for key: {}", key);
-    } else {
+    }
+    else {
         tracing::info!("No cache entry found for key: {}", key);
     }
 }
