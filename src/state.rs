@@ -52,8 +52,10 @@ impl AppState {
         }
         else {
             return Err(AppError::Error(anyhow::anyhow!(
-                "Database with path {} not found",
-                path.display()
+                "Database {} not found for ID {} (primary ID {})",
+                database,
+                dynamic,
+                db_path.primary_id
             )));
         }
 
