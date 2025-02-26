@@ -47,7 +47,15 @@ impl AppState {
         }
 
         let path = PathBuf::from(&db_path.path).join(database);
-        tracing::info!("Creating DuckDB connection for: {}", path.display());
+        if path.exists() {
+            tracing::info!("Creating DuckDB connection for: {}", path.display());
+        }
+        else {
+            return Err(AppError::Error(anyhow::anyhow!(
+                "Database with path {} not found",
+                path.display()
+            )));
+        }
 
         let db = ConnectionPool::new(path.to_str().unwrap(), self.defaults.connection_pool_size)?;
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
