@@ -33,9 +33,10 @@ impl AppState {
             .get(dynamic)
             .ok_or_else(|| anyhow::anyhow!("Database ID {} not found", dynamic))?;
 
+        let id = self.get_state_id(Some(dynamic), database)?;
         let mut states = self.states.lock().await;
 
-        if let Some(state) = states.get(&db_path.path) {
+        if let Some(state) = states.get(&id) {
             return Ok(Arc::clone(state));
         }
 
@@ -66,7 +67,7 @@ impl AppState {
 
         let new_state = Arc::new(DbState {
             config: DbConfig {
-                id: db_path.primary_id.clone(),
+                id: id.clone(),
                 path: path.to_str().unwrap().to_string(),
                 cache_size: self.defaults.cache_size,
                 connection_pool_size: self.defaults.connection_pool_size,
@@ -75,7 +76,7 @@ impl AppState {
             cache,
         });
 
-        states.insert(db_path.path.to_string(), Arc::clone(&new_state));
+        states.insert(id, Arc::clone(&new_state));
         Ok(new_state)
     }
 
@@ -127,14 +128,8 @@ impl AppState {
         Ok(new_state)
     }
 
-    pub async fn recreate_db(&self, dynamic: Option<&str>, database: &str) -> Result<()> {
-        let id = if let Some(dynamic_id) = dynamic {
-            format!("{}::{}", dynamic_id, database)
-        }
-        else {
-            database.to_string()
-        };
-
+    pub async fn recreate_db(&self, dynamic: Option<&str>, database: &str) -> Result<(), AppError> {
+        let id = self.get_state_id(dynamic, database)?;
         let mut states = self.states.lock().await;
 
         if let Some(db_state) = states.get(&id) {
@@ -162,9 +157,24 @@ impl AppState {
             states.insert(id.to_string(), new_state);
         }
         else {
-            return Err(anyhow::anyhow!("Database ID {} not found", id));
+            return Err(AppError::Error(anyhow::anyhow!("Database ID {} not found", id)));
         }
 
         Ok(())
+    }
+
+    fn get_state_id(&self, dynamic: Option<&str>, database: &str) -> Result<String, AppError> {
+        let id = if let Some(dynamic_id) = dynamic {
+            let db_path = self
+                .paths
+                .get(dynamic_id)
+                .ok_or_else(|| anyhow::anyhow!("Database ID {} not found", dynamic_id))?;
+            format!("{}::{}", db_path.primary_id, database)
+        }
+        else {
+            database.to_string()
+        };
+
+        Ok(id)
     }
 }
