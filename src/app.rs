@@ -8,8 +8,10 @@ use axum::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::thread;
 use std::time::Duration;
 use tokio::sync::Mutex;
+use tokio::task;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::{compression::CompressionLayer, trace::TraceLayer};
 
@@ -17,6 +19,11 @@ use crate::interfaces::{AppError, DbDefaults, DbPath, QueryParams, QueryResponse
 use crate::query;
 use crate::state::AppState;
 use crate::websocket;
+
+pub const DEFAULT_DB_ID: &str = "default";
+pub const DEFAULT_DB_PATH: &str = ":memory:";
+pub const DEFAULT_CONNECTION_POOL_SIZE: u32 = 10;
+pub const DEFAULT_CACHE_SIZE: usize = 1000;
 
 #[axum::debug_handler]
 async fn handle_get(
@@ -36,16 +43,13 @@ async fn handle_get(
     }
 }
 
-pub const DEFAULT_DB_ID: &str = "default";
-pub const DEFAULT_DB_PATH: &str = ":memory:";
-pub const DEFAULT_CONNECTION_POOL_SIZE: u32 = 10;
-pub const DEFAULT_CACHE_SIZE: usize = 1000;
-
 #[axum::debug_handler]
 async fn handle_post(
     State(state): State<Arc<AppState>>,
     Json(params): Json<QueryParams>,
 ) -> Result<QueryResponse, AppError> {
+    let thread_id = thread::current().id();
+    tracing::info!("Handling request on thread {:?}", thread_id);
     query::with_db_retry(&state, params, |state, params| Box::pin(query::handle(state, params))).await
 }
 

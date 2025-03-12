@@ -2,9 +2,9 @@ use anyhow::Result;
 use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
 use listenfd::ListenFd;
-use std::net::TcpListener;
-use std::{net::IpAddr, net::Ipv4Addr, net::SocketAddr, path::PathBuf};
-use tokio::net;
+use std::net::SocketAddr;
+use std::{net::IpAddr, net::Ipv4Addr, net::TcpListener, path::PathBuf};
+use tokio::{net, runtime::Builder};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::app::DEFAULT_CACHE_SIZE;
@@ -78,8 +78,20 @@ fn parse_db_dynamic_roots(s: &str) -> Result<(String, Vec<String>, String), Stri
     Ok((primary_id, aliases, path))
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
+    let worker_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+
+    println!("Starting server with {} worker threads", worker_threads);
+
+    let _ = Builder::new_multi_thread()
+        .worker_threads(worker_threads)
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(app_main());
+}
+
+async fn app_main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let db_args: Vec<(String, String)> = if args.db_paths.is_empty() {
