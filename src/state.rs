@@ -107,8 +107,9 @@ impl AppState {
         };
 
         tracing::info!(
-            "Creating DuckDB connection for: {}, with pool size",
+            "Creating DuckDB connection with ID: {}, path: {}, pool size: {}",
             id,
+            db_path.path,
             effective_pool_size
         );
 
@@ -151,7 +152,7 @@ impl AppState {
             db.execute(AUTOINSTALL_QUERY).await?;
 
             tracing::info!(
-                "Recreated DuckDB with ID: {}, path: {}, pool size: {}",
+                "Recreated DuckDB connection with ID: {}, path: {}, pool size: {}",
                 config.id,
                 config.path,
                 effective_pool_size
