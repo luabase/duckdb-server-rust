@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use duckdb::{params_from_iter, types::ToSql, DuckdbConnectionManager};
+use duckdb::{params_from_iter, types::ToSql, AccessMode, Config, DuckdbConnectionManager};
 
 use crate::interfaces::SqlValue;
 
@@ -16,8 +16,11 @@ pub struct ConnectionPool {
 }
 
 impl ConnectionPool {
-    pub fn new(db_path: &str, pool_size: u32) -> Result<Self> {
-        let manager = DuckdbConnectionManager::file(db_path)?;
+    pub fn new(db_path: &str, pool_size: u32, access_mode: AccessMode) -> Result<Self> {
+        let config = Config::default()
+            .access_mode(access_mode)?
+            .threads(pool_size as i64)?;
+        let manager = DuckdbConnectionManager::file_with_flags(db_path, config)?;
         let pool = r2d2::Pool::builder().max_size(pool_size).build(manager)?;
         Ok(Self { pool })
     }

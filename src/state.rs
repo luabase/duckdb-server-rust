@@ -1,4 +1,5 @@
 use anyhow::Result;
+use duckdb::AccessMode;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -50,10 +51,11 @@ impl AppState {
         let path = PathBuf::from(&db_path.path).join(database);
         if path.exists() {
             tracing::info!(
-                "Creating DuckDB connection with ID: {}, path: {}, pool size: {}",
+                "Creating DuckDB connection with ID: {}, path: {}, pool size: {}, access_mode: {}",
                 id,
                 path.display(),
-                self.defaults.connection_pool_size
+                self.defaults.connection_pool_size,
+                self.defaults.access_mode
             );
         }
         else {
@@ -65,7 +67,13 @@ impl AppState {
             )));
         }
 
-        let db = ConnectionPool::new(path.to_str().unwrap(), self.defaults.connection_pool_size)?;
+        let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
+
+        let db = ConnectionPool::new(
+            path.to_str().unwrap(),
+            self.defaults.connection_pool_size,
+            access_mode
+        )?;
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
 
         db.execute(AUTOINSTALL_QUERY).await?;
@@ -112,13 +120,15 @@ impl AppState {
         };
 
         tracing::info!(
-            "Creating DuckDB connection with ID: {}, path: {}, pool size: {}",
+            "Creating DuckDB connection with ID: {}, path: {}, pool size: {}, access_mode: {}",
             id,
             db_path.path,
-            effective_pool_size
+            effective_pool_size,
+            self.defaults.access_mode
         );
 
-        let db = ConnectionPool::new(&db_path.path, effective_pool_size)?;
+        let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
+        let db = ConnectionPool::new(&db_path.path, effective_pool_size, access_mode)?;
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
 
         db.execute(AUTOINSTALL_QUERY).await?;
@@ -151,16 +161,18 @@ impl AppState {
                 config.connection_pool_size
             };
 
-            let db = ConnectionPool::new(&config.path, effective_pool_size)?;
+            let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
+            let db = ConnectionPool::new(&config.path, effective_pool_size, access_mode)?;
             let cache = Mutex::new(lru::LruCache::new(db_state.config.cache_size.try_into()?));
 
             db.execute(AUTOINSTALL_QUERY).await?;
 
             tracing::info!(
-                "Recreated DuckDB connection with ID: {}, path: {}, pool size: {}",
+                "Recreated DuckDB connection with ID: {}, path: {}, pool size: {}, access_mode: {}",
                 config.id,
                 config.path,
-                effective_pool_size
+                effective_pool_size,
+                self.defaults.access_mode
             );
 
             let new_state = Arc::new(DbState {
@@ -191,5 +203,13 @@ impl AppState {
         };
 
         Ok(id)
+    }
+
+    fn convert_access_mode(mode: &str) -> AccessMode {
+        match mode.to_lowercase().as_str() {
+            "readwrite" => AccessMode::ReadWrite,
+            "readonly" => AccessMode::ReadOnly,
+            _ => AccessMode::Automatic,
+        }
     }
 }
