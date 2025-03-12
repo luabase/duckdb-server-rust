@@ -1,6 +1,7 @@
 mod app;
 mod bundle;
 mod cache;
+mod constants;
 mod db;
 mod interfaces;
 mod query;
