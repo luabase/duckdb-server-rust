@@ -20,6 +20,7 @@ pub struct DbConfig {
 
 #[derive(Debug, Clone)]
 pub struct DbDefaults {
+    pub access_mode: String,
     pub cache_size: usize,
     pub connection_pool_size: u32,
 }

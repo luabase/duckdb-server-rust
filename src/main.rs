@@ -46,6 +46,10 @@ struct Args {
     /// Max number of cache entries
     #[arg(long, default_value_t = DEFAULT_CACHE_SIZE)]
     cache_size: usize,
+
+    /// Database access mode
+    #[arg(long, default_value = "automatic")]
+    access_mode: String,
 }
 
 fn parse_db(s: &str) -> Result<(String, String), String> {
@@ -130,6 +134,7 @@ async fn app_main() -> Result<(), Box<dyn std::error::Error>> {
     let num_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
 
     let db_defaults = DbDefaults {
+        access_mode: args.access_mode,
         cache_size: args.cache_size,
         connection_pool_size: args.connection_pool_size.unwrap_or(num_threads as u32),
     };
