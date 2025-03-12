@@ -49,7 +49,12 @@ impl AppState {
 
         let path = PathBuf::from(&db_path.path).join(database);
         if path.exists() {
-            tracing::info!("Creating DuckDB connection for: {}", path.display());
+            tracing::info!(
+                "Creating DuckDB connection with ID: {}, path: {}, pool size: {}",
+                id,
+                path.display(),
+                self.defaults.connection_pool_size
+            );
         }
         else {
             return Err(AppError::Error(anyhow::anyhow!(
