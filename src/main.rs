@@ -7,15 +7,13 @@ use std::{net::IpAddr, net::Ipv4Addr, net::TcpListener, path::PathBuf};
 use tokio::{net, runtime::Builder};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::app::DEFAULT_CACHE_SIZE;
-use crate::app::DEFAULT_CONNECTION_POOL_SIZE;
-use crate::app::DEFAULT_DB_ID;
-use crate::app::DEFAULT_DB_PATH;
+use crate::constants::*;
 use crate::interfaces::{DbDefaults, DbPath};
 
 mod app;
 mod bundle;
 mod cache;
+mod constants;
 mod db;
 mod interfaces;
 mod query;

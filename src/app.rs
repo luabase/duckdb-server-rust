@@ -11,7 +11,6 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use tokio::task;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::{compression::CompressionLayer, trace::TraceLayer};
 
@@ -19,11 +18,6 @@ use crate::interfaces::{AppError, DbDefaults, DbPath, QueryParams, QueryResponse
 use crate::query;
 use crate::state::AppState;
 use crate::websocket;
-
-pub const DEFAULT_DB_ID: &str = "default";
-pub const DEFAULT_DB_PATH: &str = ":memory:";
-pub const DEFAULT_CONNECTION_POOL_SIZE: u32 = 10;
-pub const DEFAULT_CACHE_SIZE: usize = 1000;
 
 #[axum::debug_handler]
 async fn handle_get(
