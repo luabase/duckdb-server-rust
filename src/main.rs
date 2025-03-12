@@ -39,6 +39,10 @@ struct Args {
     #[arg(short, long, default_value_t = 3000)]
     port: u16,
 
+    /// Request timeout
+    #[arg(short, long, default_value_t = 60)]
+    timeout: u32,
+
     /// Max connection pool size
     #[arg(long)]
     connection_pool_size: Option<u32>,
@@ -147,7 +151,7 @@ async fn app_main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let app = app::app(db_defaults, db_paths).await?;
+    let app = app::app(db_defaults, db_paths, args.timeout).await?;
 
     // TLS configuration
     let mut config = RustlsConfig::from_pem_file(
@@ -179,7 +183,7 @@ async fn app_main() -> Result<(), Box<dyn std::error::Error>> {
         Err(_) => {
             tracing::warn!("No keys for HTTPS found.");
             tracing::info!(
-                "DuckDB Server listening on http://{0} and ws://{0}.",
+                "DuckDB Server listening on http://{0} and ws://{0}. Timeout is {}",
                 listener.local_addr()?
             );
 

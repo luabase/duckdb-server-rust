@@ -13,6 +13,7 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::{compression::CompressionLayer, trace::TraceLayer};
+use tower_http::timeout::TimeoutLayer;
 
 use crate::interfaces::{AppError, DbDefaults, DbPath, QueryParams, QueryResponse};
 use crate::query;
@@ -47,13 +48,14 @@ async fn handle_post(
     query::with_db_retry(&state, params, |state, params| Box::pin(query::handle(state, params))).await
 }
 
-pub async fn app(defaults: DbDefaults, db_paths: Vec<DbPath>) -> Result<Router> {
+pub async fn app(defaults: DbDefaults, db_paths: Vec<DbPath>, timeout: u32) -> Result<Router> {
     let app_state = Arc::new(AppState {
         defaults,
         paths: db_paths.into_iter().map(|db| (db.id.clone(), db)).collect(),
         states: Mutex::new(HashMap::new()),
     });
 
+    tracing::info!("Server timeout: {}", timeout);
     tracing::info!("Loaded paths: {:?}", app_state.paths);
 
     let cors = CorsLayer::new()
@@ -67,5 +69,7 @@ pub async fn app(defaults: DbDefaults, db_paths: Vec<DbPath>) -> Result<Router> 
         .with_state(app_state)
         .layer(cors)
         .layer(CompressionLayer::new())
-        .layer(TraceLayer::new_for_http()))
+        .layer(TraceLayer::new_for_http())
+        .layer(TimeoutLayer::new(Duration::from_secs(timeout.into())))
+    )
 }
