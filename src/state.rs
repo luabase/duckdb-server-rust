@@ -99,14 +99,18 @@ impl AppState {
             )));
         }
 
-        tracing::info!("Creating DuckDB connection for: {}", id);
-
         let effective_pool_size = if db_path.path == ":memory:" {
             1
         }
         else {
             self.defaults.connection_pool_size
         };
+
+        tracing::info!(
+            "Creating DuckDB connection for: {}, with pool size",
+            id,
+            effective_pool_size
+        );
 
         let db = ConnectionPool::new(&db_path.path, effective_pool_size)?;
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
@@ -146,7 +150,12 @@ impl AppState {
 
             db.execute(AUTOINSTALL_QUERY).await?;
 
-            tracing::info!("Recreated DuckDB with ID: {}, Path: {}", config.id, config.path);
+            tracing::info!(
+                "Recreated DuckDB with ID: {}, path: {}, pool size: {}",
+                config.id,
+                config.path,
+                effective_pool_size
+            );
 
             let new_state = Arc::new(DbState {
                 config,
