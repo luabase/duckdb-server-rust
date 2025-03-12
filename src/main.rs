@@ -40,8 +40,8 @@ struct Args {
     port: u16,
 
     /// Max connection pool size
-    #[arg(long, default_value_t = DEFAULT_CONNECTION_POOL_SIZE)]
-    connection_pool_size: u32,
+    #[arg(long)]
+    connection_pool_size: Option<u32>,
 
     /// Max number of cache entries
     #[arg(long, default_value_t = DEFAULT_CACHE_SIZE)]
@@ -127,9 +127,11 @@ async fn app_main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    let num_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+
     let db_defaults = DbDefaults {
         cache_size: args.cache_size,
-        connection_pool_size: args.connection_pool_size,
+        connection_pool_size: args.connection_pool_size.unwrap_or(num_threads as u32),
     };
 
     tracing_subscriber::registry()
