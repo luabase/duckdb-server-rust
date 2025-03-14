@@ -3,6 +3,7 @@ mod bundle;
 mod cache;
 mod constants;
 mod db;
+mod hostname;
 mod interfaces;
 mod query;
 mod state;
