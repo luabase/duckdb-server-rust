@@ -26,6 +26,7 @@ clap = { version = "4.5", features = ["derive"] }
 duckdb = { version = "1.2.0", features = ["modern-full"] }
 futures = "0.3"
 glob = "0.3.2"
+hostname = "0.4.0"
 listenfd = "1.0"
 lru = "0.12"
 r2d2 = "0.8"
@@ -34,6 +35,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
 tokio = { version = "1", features = ["full"] }
+tower = { version = "0.5.2", features = ["util"] }
 tower-http = { version = "0.6", features = ["cors", "compression-full", "timeout", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

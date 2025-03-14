@@ -1,7 +1,7 @@
 use anyhow::Result;
 use axum::{
     extract::{ws::rejection::WebSocketUpgradeRejection, Query, State, WebSocketUpgrade},
-    http::Method,
+    http::{HeaderValue, Method},
     response::Json,
     routing::get,
     Router,
@@ -14,6 +14,7 @@ use tokio::{
     },
     task,
 };
+use tower::ServiceBuilder;
 use tower_http::{
     compression::CompressionLayer,
     cors::{Any, CorsLayer},
@@ -21,6 +22,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 
+use crate::hostname::HostnameLayer;
 use crate::interfaces::{AppError, DbDefaults, DbPath, QueryParams, QueryResponse};
 use crate::state::AppState;
 use crate::{query, websocket};
@@ -126,11 +128,15 @@ pub async fn app(
         .allow_headers(Any)
         .max_age(Duration::from_secs(86400));
 
-Ok(Router::new()
+    let hostname = hostname::get()?.into_string().unwrap_or_else(|_| "unknown".into());
+    let hostname_layer = HostnameLayer { hostname: HeaderValue::from_str(&hostname)? };
+
+    Ok(Router::new()
         .route("/", get(readiness_probe))
         .route("/query", get(handle_get).post(handle_post))
         .route("/healthz", get(readiness_probe))
         .with_state((queue_state, app_state))
+        .layer(ServiceBuilder::new().layer(hostname_layer))
         .layer(cors)
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
