@@ -99,6 +99,7 @@ pub async fn app(
 
     tracing::info!("Server timeout: {}", timeout);
     tracing::info!("Server parallelism: {}", parallelism);
+    tracing::info!("Server connection queue length: {}", queue_length);
     tracing::info!("Loaded paths: {:?}", app_state.paths);
 
     let (tx, rx): (mpsc::Sender<QueryQueueItem>, QueryReceiver) = mpsc::channel(queue_length);
