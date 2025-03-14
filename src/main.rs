@@ -155,7 +155,13 @@ async fn app_main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let app = app::app(db_defaults, db_paths, args.timeout, parallelism, args.queue_length.try_into().unwrap()).await?;
+    let app = app::app(
+        db_defaults,
+        db_paths,
+        args.timeout,
+        args.connection_pool_size.unwrap_or(parallelism as u32).try_into().unwrap(),
+        args.queue_length.try_into().unwrap()
+    ).await?;
 
     // TLS configuration
     let mut config = RustlsConfig::from_pem_file(
