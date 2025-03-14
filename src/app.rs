@@ -134,6 +134,7 @@ pub async fn app(
     Ok(Router::new()
         .route("/", get(readiness_probe))
         .route("/query", get(handle_get).post(handle_post))
+        .route("/query/", get(handle_get).post(handle_post))
         .route("/healthz", get(readiness_probe))
         .with_state((queue_state, app_state))
         .layer(ServiceBuilder::new().layer(hostname_layer))
