@@ -84,6 +84,10 @@ async fn process_queue(state: Arc<AppState>, receiver: SharedQueryReceiver) {
     }
 }
 
+async fn readiness_probe() -> &'static str {
+    "OK"
+}
+
 pub async fn app(
     defaults: DbDefaults,
     db_paths: Vec<DbPath>,
@@ -122,8 +126,10 @@ pub async fn app(
         .allow_headers(Any)
         .max_age(Duration::from_secs(86400));
 
-    Ok(Router::new()
-        .route("/", get(handle_get).post(handle_post))
+Ok(Router::new()
+        .route("/", get(readiness_probe))
+        .route("/query", get(handle_get).post(handle_post))
+        .route("/healthz", get(readiness_probe))
         .with_state((queue_state, app_state))
         .layer(cors)
         .layer(CompressionLayer::new())
