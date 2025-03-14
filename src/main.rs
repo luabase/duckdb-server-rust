@@ -47,6 +47,10 @@ struct Args {
     #[arg(long)]
     connection_pool_size: Option<u32>,
 
+    /// Max server queue size
+    #[arg(short, long, default_value_t = 8192)]
+    queue_length: u32,
+
     /// Max number of cache entries
     #[arg(long, default_value_t = DEFAULT_CACHE_SIZE)]
     cache_size: usize,
@@ -135,12 +139,12 @@ async fn app_main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let num_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    let parallelism = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
 
     let db_defaults = DbDefaults {
         access_mode: args.access_mode,
         cache_size: args.cache_size,
-        connection_pool_size: args.connection_pool_size.unwrap_or(num_threads as u32),
+        connection_pool_size: args.connection_pool_size.unwrap_or(parallelism as u32),
     };
 
     tracing_subscriber::registry()
@@ -151,7 +155,7 @@ async fn app_main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let app = app::app(db_defaults, db_paths, args.timeout).await?;
+    let app = app::app(db_defaults, db_paths, args.timeout, parallelism, args.queue_length.try_into().unwrap()).await?;
 
     // TLS configuration
     let mut config = RustlsConfig::from_pem_file(
