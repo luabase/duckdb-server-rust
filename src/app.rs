@@ -88,8 +88,8 @@ pub async fn app(
     defaults: DbDefaults,
     db_paths: Vec<DbPath>,
     timeout: u32,
-    num_processors: usize,
     parallelism: usize,
+    queue_length: usize,
 ) -> Result<Router> {
     let app_state = Arc::new(AppState {
         defaults,
@@ -98,7 +98,7 @@ pub async fn app(
     });
 
     tracing::info!("Server timeout: {}", timeout);
-    tracing::info!("Server parallelism: {}", num_processors);
+    tracing::info!("Server parallelism: {}", parallelism);
     tracing::info!("Loaded paths: {:?}", app_state.paths);
 
     let (tx, rx): (mpsc::Sender<QueryQueueItem>, QueryReceiver) = mpsc::channel(queue_length);
