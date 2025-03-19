@@ -15,7 +15,7 @@ exclude = [
 [dependencies]
 anyhow = "1.0"
 arrow-json = "54.1.0"
-arrow-array = "54.1.0"
+arrow-array = { version = "54.1.0", features = ["chrono-tz"] }
 arrow-ipc = "54.1.0"
 async-trait = "0.1"
 chrono = "=0.4.34"
