@@ -69,11 +69,7 @@ impl AppState {
 
         let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
 
-        let db = ConnectionPool::new(
-            path.to_str().unwrap(),
-            self.defaults.connection_pool_size,
-            access_mode
-        )?;
+        let db = ConnectionPool::new(path.to_str().unwrap(), self.defaults.connection_pool_size, access_mode)?;
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
 
         db.execute(AUTOINSTALL_QUERY).await?;
