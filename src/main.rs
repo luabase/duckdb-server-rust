@@ -2,18 +2,19 @@ use anyhow::Result;
 use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
 use listenfd::ListenFd;
-use std::net::SocketAddr;
-use std::{net::IpAddr, net::Ipv4Addr, net::TcpListener, path::PathBuf};
-use tokio::{net, runtime::Builder};
+use std::{collections::HashMap, net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener}, path::PathBuf, sync::Arc};
+use tokio::{net, runtime::Builder, sync::Mutex};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::constants::*;
 use crate::interfaces::{DbDefaults, DbPath};
+use crate::state::AppState;
 
 mod app;
 mod bundle;
 mod cache;
 mod constants;
+mod flight;
 mod db;
 mod hostname;
 mod interfaces;
@@ -38,7 +39,11 @@ struct Args {
 
     /// HTTP Port
     #[arg(short, long, default_value_t = 3000)]
-    port: u16,
+    http_port: u16,
+
+    /// gRPC Port
+    #[arg(short, long, default_value_t = 3030)]
+    grpc_port: u16,
 
     /// Request timeout
     #[arg(short, long, default_value_t = 60)]
@@ -148,6 +153,14 @@ async fn app_main() -> Result<(), Box<dyn std::error::Error>> {
         connection_pool_size: args.connection_pool_size.unwrap_or(parallelism as u32),
     };
 
+    let app_state = Arc::new(AppState {
+        defaults: db_defaults,
+        paths: db_paths.into_iter().map(|db| (db.id.clone(), db)).collect(),
+        states: Mutex::new(HashMap::new()),
+    });
+
+    tracing::info!("Loaded paths: {:?}", app_state.paths);
+
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -157,12 +170,21 @@ async fn app_main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let app = app::app(
-        db_defaults,
-        db_paths,
+        app_state.clone(),
         args.timeout,
-        args.connection_pool_size.unwrap_or(parallelism as u32).try_into().unwrap(),
-        args.queue_length.try_into().unwrap()
+        parallelism,
+        args.queue_length as usize,
     ).await?;
+
+    let addr = SocketAddr::new(args.address, args.http_port);
+    let mut listenfd = ListenFd::from_env();
+    let listener = match listenfd.take_tcp_listener(0)? {
+        Some(listener) => {
+            listener.set_nonblocking(true)?;
+            listener
+        }
+        None => TcpListener::bind(addr)?,
+    };
 
     // TLS configuration
     let mut config = RustlsConfig::from_pem_file(
@@ -172,46 +194,52 @@ async fn app_main() -> Result<(), Box<dyn std::error::Error>> {
     .await;
 
     if config.is_err() {
-        // try current directory for HTTPS keys if env didn't work
         config = RustlsConfig::from_pem_file("./localhost.pem", "./localhost-key.pem").await;
     }
 
-    // Listenfd setup
-    let addr = SocketAddr::new(args.address, args.port);
-    let mut listenfd = ListenFd::from_env();
-    let listener = match listenfd.take_tcp_listener(0)? {
-        // if we are given a tcp listener on listen fd 0, we use that one
-        Some(listener) => {
-            listener.set_nonblocking(true)?;
-            listener
-        }
-        // otherwise fall back to local listening
-        None => TcpListener::bind(addr)?,
-    };
-
-    // Run the server
     match config {
         Err(_) => {
             tracing::warn!("No keys for HTTPS found.");
             tracing::info!(
-                "DuckDB Server listening on http://{0} and ws://{0}. Timeout is {}",
-                listener.local_addr()?
+                "DuckDB Server listening on http://{0} and ws://{0}. Timeout is {1}",
+                listener.local_addr()?,
+                args.timeout
             );
 
             let listener = net::TcpListener::from_std(listener)?;
-            axum::serve(listener, app).await?;
+            tokio::spawn(async move {
+                axum::serve(listener, app).await.unwrap();
+            });
         }
         Ok(config) => {
             tracing::info!(
-                "DuckDB Server listening on http(s)://{0} and ws://{0}",
-                listener.local_addr()?
+                "DuckDB Server listening on http://{0} and ws://{0}. Timeout is {1}",
+                listener.local_addr()?,
+                args.timeout
             );
 
-            axum_server_dual_protocol::from_tcp_dual_protocol(listener, config)
-                .serve(app.into_make_service())
-                .await?;
+            tokio::spawn(async move {
+                axum_server_dual_protocol::from_tcp_dual_protocol(listener, config)
+                    .serve(app.into_make_service())
+                    .await
+                    .unwrap();
+            });
         }
     }
 
+    let flight_addr = SocketAddr::new(args.address, args.grpc_port);
+    let flight_state = app_state.clone();
+
+    tokio::spawn(async move {
+        flight::serve(flight_addr, flight_state).await.unwrap();
+    });
+
+    tracing::info!(
+        "gRPC server listening on {}:{}",
+        args.address,
+        args.grpc_port
+    );
+
+    futures::future::pending::<()>().await;
     Ok(())
 }

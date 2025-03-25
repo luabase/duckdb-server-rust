@@ -1,4 +1,5 @@
 use anyhow::Result;
+use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use duckdb::{params_from_iter, types::ToSql, AccessMode, Config, DuckdbConnectionManager};
 
@@ -9,6 +10,7 @@ pub trait Database: Send + Sync {
     async fn execute(&self, sql: &str) -> Result<()>;
     async fn get_json(&self, sql: &str, args: &[SqlValue]) -> Result<Vec<u8>>;
     async fn get_arrow(&self, sql: &str, args: &[SqlValue]) -> Result<Vec<u8>>;
+    async fn get_record_batches(&self, sql: &str, args: &[SqlValue]) -> Result<Vec<RecordBatch>>;
 }
 
 pub struct ConnectionPool {
@@ -74,5 +76,13 @@ impl Database for ConnectionPool {
         }
 
         Ok(buffer)
+    }
+
+    async fn get_record_batches(&self, sql: &str, args: &[SqlValue]) -> Result<Vec<RecordBatch>> {
+        let conn = self.get()?;
+        let mut stmt = conn.prepare(sql)?;
+        let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
+        let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
+        Ok(arrow.collect())
     }
 }

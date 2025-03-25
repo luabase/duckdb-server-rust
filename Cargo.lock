@@ -294,14 +294,22 @@ version = "54.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aecab6e2ed46c553354ffbc6cb76ac3eaa61dc07bd13d7de8ece233933bcf679"
 dependencies = [
+ "arrow-arith",
  "arrow-array",
  "arrow-buffer",
  "arrow-cast",
+ "arrow-data",
  "arrow-ipc",
+ "arrow-ord",
+ "arrow-row",
  "arrow-schema",
+ "arrow-select",
+ "arrow-string",
  "base64",
  "bytes",
  "futures",
+ "once_cell",
+ "paste",
  "prost",
  "prost-types",
  "tonic",
@@ -1291,6 +1299,7 @@ dependencies = [
  "arrow-flight",
  "arrow-ipc",
  "arrow-json",
+ "async-stream",
  "async-trait",
  "axum 0.8.1",
  "axum-server",
@@ -1314,6 +1323,8 @@ dependencies = [
  "sha2",
  "temp_testdir",
  "tokio",
+ "tokio-stream",
+ "tonic",
  "tower 0.5.2",
  "tower-http",
  "tracing",
@@ -2504,6 +2515,12 @@ checksum = "1f2a05b18d44e2957b88f96ba460715e295bc1d7510468a2f3d3b44535d26c24"
 dependencies = [
  "regex",
 ]
+
+[[package]]
+name = "paste"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "percent-encoding"
@@ -4116,6 +4133,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

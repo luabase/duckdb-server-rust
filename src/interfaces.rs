@@ -5,6 +5,7 @@ use axum::{
 };
 use duckdb::types::ToSql;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use tokio::sync::Mutex;
 
 use crate::bundle::Query as BundleQuery;
@@ -130,6 +131,15 @@ impl IntoResponse for AppError {
                     .into_response()
             }
             AppError::BadRequest => (StatusCode::BAD_REQUEST).into_response(),
+        }
+    }
+}
+
+impl fmt::Display for AppError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AppError::Error(err) => write!(f, "{}", err),
+            AppError::BadRequest => write!(f, "Bad request"),
         }
     }
 }
