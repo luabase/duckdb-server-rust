@@ -6,7 +6,7 @@ use axum::{
     routing::get,
     Router,
 };
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 use tokio::{
     sync::{
         mpsc::{self, Sender},
@@ -23,7 +23,7 @@ use tower_http::{
 };
 
 use crate::hostname::HostnameLayer;
-use crate::interfaces::{AppError, DbDefaults, DbPath, QueryParams, QueryResponse};
+use crate::interfaces::{AppError, QueryParams, QueryResponse};
 use crate::state::AppState;
 use crate::{query, websocket};
 
@@ -91,22 +91,14 @@ async fn readiness_probe() -> &'static str {
 }
 
 pub async fn app(
-    defaults: DbDefaults,
-    db_paths: Vec<DbPath>,
+    app_state: Arc<AppState>,
     timeout: u32,
     parallelism: usize,
     queue_length: usize,
 ) -> Result<Router> {
-    let app_state = Arc::new(AppState {
-        defaults,
-        paths: db_paths.into_iter().map(|db| (db.id.clone(), db)).collect(),
-        states: Mutex::new(HashMap::new()),
-    });
-
-    tracing::info!("Server timeout: {}", timeout);
-    tracing::info!("Server parallelism: {}", parallelism);
-    tracing::info!("Server connection queue length: {}", queue_length);
-    tracing::info!("Loaded paths: {:?}", app_state.paths);
+    tracing::info!("HTTP Server timeout: {}", timeout);
+    tracing::info!("HTTP Server parallelism: {}", parallelism);
+    tracing::info!("HTTP Server connection queue length: {}", queue_length);
 
     let (tx, rx): (mpsc::Sender<QueryQueueItem>, QueryReceiver) = mpsc::channel(queue_length);
     let rx: SharedQueryReceiver = Arc::new(Mutex::new(rx));

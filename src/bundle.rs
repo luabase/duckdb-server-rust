@@ -50,7 +50,8 @@ pub async fn create(
             ))
             .await?;
             manifest.tables.push(alias.clone());
-        } else if sql.starts_with("CREATE ") {
+        }
+        else if sql.starts_with("CREATE ") {
             if view_re.is_match(sql) {
                 continue; // Ignore views
             }
@@ -67,10 +68,12 @@ pub async fn create(
                 .await?;
                 manifest.tables.push(table.to_string());
             }
-        } else if !pragma_re.is_match(sql) {
+        }
+        else if !pragma_re.is_match(sql) {
             let command = if describe_re.is_match(sql) {
                 Command::Json
-            } else {
+            }
+            else {
                 Command::Arrow
             };
             let args = vec![];
@@ -78,7 +81,8 @@ pub async fn create(
             let result = retrieve(cache, sql, &args, &command, true, false, || {
                 if let Command::Arrow = command {
                     db.get_arrow(sql, &args)
-                } else {
+                }
+                else {
                     db.get_json(sql, &args)
                 }
             })

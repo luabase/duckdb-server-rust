@@ -3,6 +3,7 @@ mod bundle;
 mod cache;
 mod constants;
 mod db;
+mod flight;
 mod hostname;
 mod interfaces;
 mod query;
@@ -10,6 +11,7 @@ mod state;
 mod websocket;
 
 pub use app::app;
+pub use flight::{FlightServer, serve};
 pub use cache::{get_key, retrieve};
 pub use db::{ConnectionPool, Database};
 pub use interfaces::{AppError, Command, DbConfig, DbState, QueryParams, QueryResponse};
