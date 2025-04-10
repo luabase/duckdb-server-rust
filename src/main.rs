@@ -2,7 +2,12 @@ use anyhow::Result;
 use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
 use listenfd::ListenFd;
-use std::{collections::HashMap, net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener}, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap,
+    net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener},
+    path::PathBuf,
+    sync::Arc,
+};
 use tokio::{net, runtime::Builder, sync::Mutex};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -14,8 +19,8 @@ mod app;
 mod bundle;
 mod cache;
 mod constants;
-mod flight;
 mod db;
+mod flight;
 mod hostname;
 mod interfaces;
 mod query;
@@ -34,7 +39,7 @@ struct Args {
     db_dynamic_roots: Vec<(String, Vec<String>, String)>,
 
     /// HTTP Address
-    #[arg(short, long, default_value_t = Ipv4Addr::LOCALHOST.into())]
+    #[arg(short, long, default_value_t = Ipv4Addr::UNSPECIFIED.into())]
     address: IpAddr,
 
     /// HTTP Port
@@ -169,12 +174,7 @@ async fn app_main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let app = app::app(
-        app_state.clone(),
-        args.timeout,
-        parallelism,
-        args.queue_length as usize,
-    ).await?;
+    let app = app::app(app_state.clone(), args.timeout, parallelism, args.queue_length as usize).await?;
 
     let addr = SocketAddr::new(args.address, args.http_port);
     let mut listenfd = ListenFd::from_env();
@@ -234,11 +234,7 @@ async fn app_main() -> Result<(), Box<dyn std::error::Error>> {
         flight::serve(flight_addr, flight_state).await.unwrap();
     });
 
-    tracing::info!(
-        "gRPC server listening on {}:{}",
-        args.address,
-        args.grpc_port
-    );
+    tracing::info!("gRPC server listening on {}:{}", args.address, args.grpc_port);
 
     futures::future::pending::<()>().await;
     Ok(())
