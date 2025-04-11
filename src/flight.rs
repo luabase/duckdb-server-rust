@@ -1,4 +1,5 @@
-use crate::{interfaces::QueryParams, state::AppState};
+use crate::{interfaces::QueryParams, state::AppState,};
+use crate::grpc_health::{grpc_health_v1::FILE_DESCRIPTOR_SET, HealthCheckService, HealthServer};
 use arrow_flight::{
     encode::FlightDataEncoderBuilder,
     error::FlightError,
@@ -8,6 +9,7 @@ use arrow_flight::{
 use futures::{stream::BoxStream, TryStreamExt};
 use std::{net::SocketAddr, sync::Arc};
 use tonic::{transport::Server, Request, Response, Status};
+use tonic_reflection::server::Builder as ReflectionBuilder;
 
 pub struct FlightServer {
     pub state: Arc<AppState>,
@@ -151,8 +153,15 @@ impl FlightService for FlightServer {
 pub async fn serve(addr: SocketAddr, state: Arc<AppState>) -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Starting Arrow Flight Server at {}", addr);
 
+    let reflection_service = ReflectionBuilder::configure()
+        .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
+        .build_v1()
+        .unwrap();
+
     Server::builder()
         .add_service(FlightServiceServer::new(FlightServer::new(state)))
+        .add_service(HealthServer::new(HealthCheckService::default()))
+        .add_service(reflection_service)
         .serve(addr)
         .await?;
 
