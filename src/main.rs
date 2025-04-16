@@ -197,45 +197,41 @@ async fn app_main() -> Result<(), Box<dyn std::error::Error>> {
         config = RustlsConfig::from_pem_file("./localhost.pem", "./localhost-key.pem").await;
     }
 
+    let flight_addr = SocketAddr::new(args.address, args.grpc_port);
+    let flight_state = app_state.clone();
+    std::thread::spawn(move || {
+        let flight_rt = tokio::runtime::Runtime::new().unwrap();
+        flight_rt.block_on(async move {
+            flight::serve(flight_addr, flight_state).await.unwrap();
+        });
+    });
+
     match config {
         Err(_) => {
             tracing::warn!("No keys for HTTPS found.");
             tracing::info!(
-                "DuckDB Server listening on http://{0}. Timeout is {1}",
+                "DuckDB Server listening on http://{}. Timeout is {}",
                 listener.local_addr()?,
                 args.timeout
             );
 
             let listener = net::TcpListener::from_std(listener)?;
-            tokio::spawn(async move {
-                axum::serve(listener, app).await.unwrap();
-            });
+
+            // Run Axum directly without tokio::spawn
+            axum::serve(listener, app).await?;
         }
         Ok(config) => {
             tracing::info!(
-                "DuckDB Server listening on http://{0}. Timeout is {1}",
+                "DuckDB Server listening with TLS on https://{}. Timeout is {}",
                 listener.local_addr()?,
                 args.timeout
             );
 
-            tokio::spawn(async move {
-                axum_server_dual_protocol::from_tcp_dual_protocol(listener, config)
-                    .serve(app.into_make_service())
-                    .await
-                    .unwrap();
-            });
+            axum_server_dual_protocol::from_tcp_dual_protocol(listener, config)
+                .serve(app.into_make_service())
+                .await?;
         }
     }
 
-    let flight_addr = SocketAddr::new(args.address, args.grpc_port);
-    let flight_state = app_state.clone();
-
-    tokio::spawn(async move {
-        flight::serve(flight_addr, flight_state).await.unwrap();
-    });
-
-    tracing::info!("gRPC server listening on {}:{}", args.address, args.grpc_port);
-
-    futures::future::pending::<()>().await;
     Ok(())
 }
