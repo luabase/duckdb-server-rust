@@ -16,7 +16,7 @@ ENV LIBRARY_PATH=/usr/local/lib:$LIBRARY_PATH
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
 
-RUN cargo install --git https://github.com/luabase/duckdb-server-rust.git duckdb-server
+RUN cargo install --path .
 
 RUN echo "ulimit -n 65535" >> /etc/profile
 RUN echo "session required pam_limits.so" >> /etc/pam.d/common-session
