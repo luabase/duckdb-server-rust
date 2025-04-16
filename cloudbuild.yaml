@@ -1,0 +1,17 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+    - 'build'
+    - '--build-arg'
+    - 'PROJECT_ID=$PROJECT_ID'
+    - '-t'
+    - 'us-central1-docker.pkg.dev/$PROJECT_ID/duckdb/duckdb-server:latest'
+    - '.'
+
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+    - 'push'
+    - 'us-central1-docker.pkg.dev/$PROJECT_ID/duckdb/duckdb-server:latest'
+
+images:
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/duckdb/duckdb-server:latest'
