@@ -201,7 +201,7 @@ async fn app_main() -> Result<(), Box<dyn std::error::Error>> {
         Err(_) => {
             tracing::warn!("No keys for HTTPS found.");
             tracing::info!(
-                "DuckDB Server listening on http://{0} and ws://{0}. Timeout is {1}",
+                "DuckDB Server listening on http://{0}. Timeout is {1}",
                 listener.local_addr()?,
                 args.timeout
             );
@@ -213,7 +213,7 @@ async fn app_main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Ok(config) => {
             tracing::info!(
-                "DuckDB Server listening on http://{0} and ws://{0}. Timeout is {1}",
+                "DuckDB Server listening on http://{0}. Timeout is {1}",
                 listener.local_addr()?,
                 args.timeout
             );
