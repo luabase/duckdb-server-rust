@@ -58,10 +58,6 @@ struct Args {
     #[arg(long)]
     connection_pool_size: Option<u32>,
 
-    /// Max server queue size
-    #[arg(short, long, default_value_t = 8192)]
-    queue_length: u32,
-
     /// Max number of cache entries
     #[arg(long, default_value_t = DEFAULT_CACHE_SIZE)]
     cache_size: usize,
@@ -174,7 +170,7 @@ async fn app_main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let app = app::app(app_state.clone(), args.timeout, parallelism, args.queue_length as usize).await?;
+    let app = app::app(app_state.clone(), args.timeout).await?;
 
     let addr = SocketAddr::new(args.address, args.http_port);
     let mut listenfd = ListenFd::from_env();

@@ -7,13 +7,6 @@ use axum::{
     Router,
 };
 use std::{sync::Arc, time::Duration};
-use tokio::{
-    sync::{
-        mpsc::{self, Sender},
-        oneshot, Mutex,
-    },
-    task,
-};
 use tower::ServiceBuilder;
 use tower_http::{
     compression::CompressionLayer,
@@ -27,80 +20,37 @@ use crate::interfaces::{AppError, QueryParams, QueryResponse};
 use crate::query;
 use crate::state::AppState;
 
-type QueryResultSender = oneshot::Sender<Result<QueryResponse, AppError>>;
-type QueryQueueItem = (QueryParams, QueryResultSender);
-type QueryReceiver = mpsc::Receiver<QueryQueueItem>;
-type SharedQueryReceiver = Arc<Mutex<QueryReceiver>>;
-
-#[derive(Clone)]
-pub struct QueueState {
-    sender: Sender<(
-        QueryParams,
-        tokio::sync::oneshot::Sender<Result<QueryResponse, AppError>>,
-    )>,
-}
-
 #[axum::debug_handler]
 async fn handle_get(
-    State((queue_state, _app_state)): State<(QueueState, Arc<AppState>)>,
+    State(app_state): State<Arc<AppState>>,
     Query(params): Query<QueryParams>,
 ) -> Result<QueryResponse, AppError> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    queue_state.sender.send((params, tx)).await.unwrap();
-    rx.await.unwrap()
+    let res = query::with_db_retry(&app_state, params, |state, params| {
+        Box::pin(query::handle(state, params))
+    })
+    .await?;
+
+    Ok(res)
 }
 
 #[axum::debug_handler]
 async fn handle_post(
-    State((queue_state, _app_state)): State<(QueueState, Arc<AppState>)>,
+    State(app_state): State<Arc<AppState>>,
     Json(params): Json<QueryParams>,
 ) -> Result<QueryResponse, AppError> {
-    let (tx, rx) = oneshot::channel();
-    queue_state.sender.send((params, tx)).await.unwrap();
-    rx.await.unwrap()
-}
+    let res = query::with_db_retry(&app_state, params, |state, params| {
+        Box::pin(query::handle(state, params))
+    })
+    .await?;
 
-async fn process_queue(state: Arc<AppState>, receiver: SharedQueryReceiver) {
-    loop {
-        let msg = {
-            let mut receiver_guard = receiver.lock().await;
-            receiver_guard.recv().await
-        };
-
-        match msg {
-            Some((params, response_tx)) => {
-                let res =
-                    query::with_db_retry(&state, params, |state, params| Box::pin(query::handle(state, params))).await;
-                let _ = response_tx.send(res);
-            }
-            None => break,
-        }
-    }
+    Ok(res)
 }
 
 async fn readiness_probe() -> &'static str {
     "OK"
 }
 
-pub async fn app(app_state: Arc<AppState>, timeout: u32, parallelism: usize, queue_length: usize) -> Result<Router> {
-    tracing::info!("HTTP Server timeout: {}", timeout);
-    tracing::info!("HTTP Server parallelism: {}", parallelism);
-    tracing::info!("HTTP Server connection queue length: {}", queue_length);
-
-    let (tx, rx): (mpsc::Sender<QueryQueueItem>, QueryReceiver) = mpsc::channel(queue_length);
-    let rx: SharedQueryReceiver = Arc::new(Mutex::new(rx));
-
-    for _ in 0..parallelism {
-        let processor_state = app_state.clone();
-        let rx_clone = Arc::clone(&rx);
-
-        task::spawn(async move {
-            process_queue(processor_state, rx_clone).await;
-        });
-    }
-
-    let queue_state = QueueState { sender: tx };
-
+pub async fn app(app_state: Arc<AppState>, timeout: u32) -> Result<Router> {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods([Method::OPTIONS, Method::POST, Method::GET])
@@ -117,7 +67,7 @@ pub async fn app(app_state: Arc<AppState>, timeout: u32, parallelism: usize, que
         .route("/query", get(handle_get).post(handle_post))
         .route("/query/", get(handle_get).post(handle_post))
         .route("/healthz", get(readiness_probe))
-        .with_state((queue_state, app_state))
+        .with_state(app_state)
         .layer(ServiceBuilder::new().layer(hostname_layer))
         .layer(cors)
         .layer(CompressionLayer::new())
