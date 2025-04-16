@@ -9,7 +9,6 @@ mod hostname;
 mod interfaces;
 mod query;
 mod state;
-mod websocket;
 
 pub use app::app;
 pub use cache::{get_key, retrieve};

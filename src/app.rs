@@ -1,6 +1,6 @@
 use anyhow::Result;
 use axum::{
-    extract::{ws::rejection::WebSocketUpgradeRejection, Query, State, WebSocketUpgrade},
+    extract::{Query, State},
     http::{HeaderValue, Method},
     response::Json,
     routing::get,
@@ -24,8 +24,8 @@ use tower_http::{
 
 use crate::hostname::HostnameLayer;
 use crate::interfaces::{AppError, QueryParams, QueryResponse};
+use crate::query;
 use crate::state::AppState;
-use crate::{query, websocket};
 
 type QueryResultSender = oneshot::Sender<Result<QueryResponse, AppError>>;
 type QueryQueueItem = (QueryParams, QueryResultSender);
@@ -42,20 +42,12 @@ pub struct QueueState {
 
 #[axum::debug_handler]
 async fn handle_get(
-    State((queue_state, app_state)): State<(QueueState, Arc<AppState>)>,
-    ws: Result<WebSocketUpgrade, WebSocketUpgradeRejection>,
+    State((queue_state, _app_state)): State<(QueueState, Arc<AppState>)>,
     Query(params): Query<QueryParams>,
 ) -> Result<QueryResponse, AppError> {
-    if let Ok(ws) = ws {
-        Ok(QueryResponse::Response(
-            ws.on_upgrade(|socket| websocket::handle(socket, app_state)),
-        ))
-    }
-    else {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        queue_state.sender.send((params, tx)).await.unwrap();
-        rx.await.unwrap()
-    }
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    queue_state.sender.send((params, tx)).await.unwrap();
+    rx.await.unwrap()
 }
 
 #[axum::debug_handler]
@@ -90,12 +82,7 @@ async fn readiness_probe() -> &'static str {
     "OK"
 }
 
-pub async fn app(
-    app_state: Arc<AppState>,
-    timeout: u32,
-    parallelism: usize,
-    queue_length: usize,
-) -> Result<Router> {
+pub async fn app(app_state: Arc<AppState>, timeout: u32, parallelism: usize, queue_length: usize) -> Result<Router> {
     tracing::info!("HTTP Server timeout: {}", timeout);
     tracing::info!("HTTP Server parallelism: {}", parallelism);
     tracing::info!("HTTP Server connection queue length: {}", queue_length);
@@ -121,7 +108,9 @@ pub async fn app(
         .max_age(Duration::from_secs(86400));
 
     let hostname = hostname::get()?.into_string().unwrap_or_else(|_| "unknown".into());
-    let hostname_layer = HostnameLayer { hostname: HeaderValue::from_str(&hostname)? };
+    let hostname_layer = HostnameLayer {
+        hostname: HeaderValue::from_str(&hostname)?,
+    };
 
     Ok(Router::new()
         .route("/", get(readiness_probe))

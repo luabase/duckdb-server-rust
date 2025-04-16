@@ -8,17 +8,10 @@ _Note:_ This package provides a local DuckDB server. To instead use DuckDB-WASM 
 
 ## Usage
 
-Install the server with Cargo or [Cargo B(inary)Install](https://github.com/cargo-bins/cargo-binstall).
+Install and run the server with
 
 ```sh
 cargo install duckdb-server
-# or
-cargo binstall duckdb-server
-```
-
-Then run the server with
-
-```sh
 duckdb-server
 ```
 
@@ -44,7 +37,7 @@ mkcert localhost
 
 ## API
 
-The server supports queries via HTTP GET and POST, and WebSockets. The GET endpoint is useful for debugging. For example, you can query it with [this url](<http://localhost:3000/?query={"sql":"select 1","type":"json"}>).
+The server supports queries via HTTP GET, POST, and [Arrow Flight](https://arrow.apache.org/docs/format/Flight.html). The GET endpoint is useful for debugging. For example, you can query it with [this url](<http://localhost:3000/?query={"sql":"select 1","type":"json"}>).
 
 Each endpoint takes a JSON object with a command in the `type`. The server supports the following commands.
 
