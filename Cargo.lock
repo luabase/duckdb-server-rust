@@ -1288,7 +1288,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "duckdb-server-rust"
+name = "duckdb-server"
 version = "1.0.0"
 dependencies = [
  "anyhow",
