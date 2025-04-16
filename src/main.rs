@@ -26,7 +26,6 @@ mod hostname;
 mod interfaces;
 mod query;
 mod state;
-mod websocket;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]

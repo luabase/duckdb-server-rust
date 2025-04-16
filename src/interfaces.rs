@@ -91,7 +91,6 @@ pub struct QueryParams {
 pub enum QueryResponse {
     Arrow(Vec<u8>),
     Json(String),
-    Response(Response),
     Empty,
 }
 
@@ -107,7 +106,6 @@ impl IntoResponse for QueryResponse {
             QueryResponse::Json(value) => {
                 (StatusCode::OK, [("Content-Type", "application/json")], value).into_response()
             }
-            QueryResponse::Response(response) => response,
             QueryResponse::Empty => StatusCode::OK.into_response(),
         }
     }

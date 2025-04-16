@@ -1,14 +1,13 @@
-use crate::{interfaces::QueryParams, state::AppState,};
 use crate::grpc_health::{grpc_health_v1::FILE_DESCRIPTOR_SET, HealthCheckService, HealthServer};
+use crate::{interfaces::QueryParams, state::AppState};
 use arrow_flight::{
-    encode::FlightDataEncoderBuilder,
-    error::FlightError,
-    flight_service_server::{FlightService, FlightServiceServer},
-    FlightData, Ticket,
+    encode::FlightDataEncoderBuilder, error::FlightError, flight_service_server::FlightService,
+    flight_service_server::FlightServiceServer, Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor,
+    FlightInfo, HandshakeRequest, HandshakeResponse, PollInfo, PutResult, SchemaResult, Ticket,
 };
 use futures::{stream::BoxStream, TryStreamExt};
 use std::{net::SocketAddr, sync::Arc};
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{transport::Server, Request, Response, Status, Streaming};
 use tonic_reflection::server::Builder as ReflectionBuilder;
 
 pub struct FlightServer {
@@ -23,13 +22,13 @@ impl FlightServer {
 
 #[tonic::async_trait]
 impl FlightService for FlightServer {
+    type HandshakeStream = BoxStream<'static, Result<HandshakeResponse, Status>>;
+    type ListFlightsStream = BoxStream<'static, Result<FlightInfo, Status>>;
     type DoGetStream = BoxStream<'static, Result<FlightData, Status>>;
-    type HandshakeStream = BoxStream<'static, Result<arrow_flight::HandshakeResponse, Status>>;
-    type ListFlightsStream = BoxStream<'static, Result<arrow_flight::FlightInfo, Status>>;
-    type DoPutStream = BoxStream<'static, Result<arrow_flight::PutResult, Status>>;
-    type DoExchangeStream = BoxStream<'static, Result<FlightData, Status>>;
+    type DoPutStream = BoxStream<'static, Result<PutResult, Status>>;
     type DoActionStream = BoxStream<'static, Result<arrow_flight::Result, Status>>;
-    type ListActionsStream = BoxStream<'static, Result<arrow_flight::ActionType, Status>>;
+    type ListActionsStream = BoxStream<'static, Result<ActionType, Status>>;
+    type DoExchangeStream = BoxStream<'static, Result<FlightData, Status>>;
 
     async fn do_get(&self, request: Request<Ticket>) -> Result<Response<Self::DoGetStream>, Status> {
         let ticket_bytes = request.into_inner().ticket;
@@ -75,54 +74,39 @@ impl FlightService for FlightServer {
 
     async fn handshake(
         &self,
-        _: Request<tonic::Streaming<arrow_flight::HandshakeRequest>>,
+        _request: Request<Streaming<HandshakeRequest>>,
     ) -> Result<Response<Self::HandshakeStream>, Status> {
         Err(Status::unimplemented("Not implemented"))
     }
 
-    async fn list_flights(
-        &self,
-        _: Request<arrow_flight::Criteria>,
-    ) -> Result<Response<Self::ListFlightsStream>, Status> {
+    async fn list_flights(&self, _request: Request<Criteria>) -> Result<Response<Self::ListFlightsStream>, Status> {
         Err(Status::unimplemented("Not implemented"))
     }
 
-    async fn get_flight_info(
-        &self,
-        _: Request<arrow_flight::FlightDescriptor>,
-    ) -> Result<Response<arrow_flight::FlightInfo>, Status> {
+    async fn get_flight_info(&self, _request: Request<FlightDescriptor>) -> Result<Response<FlightInfo>, Status> {
         Err(Status::unimplemented("Not implemented"))
     }
 
-    async fn poll_flight_info(
-        &self,
-        _: Request<arrow_flight::FlightDescriptor>,
-    ) -> Result<Response<arrow_flight::PollInfo>, Status> {
+    async fn poll_flight_info(&self, _request: Request<FlightDescriptor>) -> Result<Response<PollInfo>, Status> {
         Err(Status::unimplemented("Not implemented"))
     }
 
-    async fn get_schema(
-        &self,
-        _: Request<arrow_flight::FlightDescriptor>,
-    ) -> Result<Response<arrow_flight::SchemaResult>, Status> {
+    async fn get_schema(&self, _request: Request<FlightDescriptor>) -> Result<Response<SchemaResult>, Status> {
         Err(Status::unimplemented("Not implemented"))
     }
 
-    async fn do_put(&self, _: Request<tonic::Streaming<FlightData>>) -> Result<Response<Self::DoPutStream>, Status> {
+    async fn do_put(&self, _request: Request<Streaming<FlightData>>) -> Result<Response<Self::DoPutStream>, Status> {
         Err(Status::unimplemented("Not implemented"))
     }
 
     async fn do_exchange(
         &self,
-        _: Request<tonic::Streaming<FlightData>>,
+        _request: Request<Streaming<FlightData>>,
     ) -> Result<Response<Self::DoExchangeStream>, Status> {
         Err(Status::unimplemented("Not implemented"))
     }
 
-    async fn do_action(
-        &self,
-        request: Request<arrow_flight::Action>,
-    ) -> Result<Response<Self::DoActionStream>, Status> {
+    async fn do_action(&self, request: Request<Action>) -> Result<Response<Self::DoActionStream>, Status> {
         let action = request.into_inner();
 
         if action.r#type == "healthcheck" {
@@ -140,7 +124,7 @@ impl FlightService for FlightServer {
         }
     }
 
-    async fn list_actions(&self, _: Request<arrow_flight::Empty>) -> Result<Response<Self::ListActionsStream>, Status> {
+    async fn list_actions(&self, _request: Request<Empty>) -> Result<Response<Self::ListActionsStream>, Status> {
         let actions = vec![arrow_flight::ActionType {
             r#type: "healthcheck".to_string(),
             description: "Health check action".to_string(),
