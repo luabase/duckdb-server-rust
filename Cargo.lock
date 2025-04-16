@@ -1290,8 +1290,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "duckdb-server"
-version = "0.2.0"
+name = "duckdb-server-rust"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "arrow",
