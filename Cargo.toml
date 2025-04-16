@@ -1,16 +1,9 @@
 [package]
-name = "duckdb-server"
-version = "0.2.0"
+name = "duckdb-server-rust"
+version = "1.0.0"
 edition = "2021"
-repository = "https://github.com/uwdata/mosaic"
-description = "DuckDB Server for Mosaic."
-license = "BSD-3-Clause"
-exclude = [
-    "data/*",
-    ".vscode/*",
-]
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+repository = "https://github.com/luabase/duckdb-server-rust"
+description = "Definite DuckDB Server"
 
 [dependencies]
 anyhow = "1.0"
@@ -57,10 +50,6 @@ tonic-build = "0.12.3"
 criterion = {version = "0.5", features=["async_futures", "html_reports"]}
 http-body-util = "0.1"
 temp_testdir = "0.2"
-
-[[bench]]
-name = "benchmark"
-harness = false
 
 [profile.release]
 codegen-units = 1
