@@ -135,46 +135,92 @@ impl Database for SafeConnectionPool {
     }
 
     async fn get_json(&self, sql: &str, args: &[SqlValue]) -> Result<Vec<u8>> {
-        let pool = self.inner.read().await;
-        let conn = pool.get()?;
-        let mut stmt = conn.prepare(sql)?;
-        let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
-        let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
+        let sql_owned = sql.to_string();
+        let args = args.to_vec();
+        let pool = self.inner.clone();
 
-        let buf = Vec::new();
-        let mut writer = arrow_json::ArrayWriter::new(buf);
-        for batch in arrow {
-            writer.write(&batch)?;
+        let result = tokio::task::spawn_blocking({
+            let sql = sql_owned.clone();
+            move || -> Result<Vec<u8>> {
+                let conn = pool.blocking_read().get()?;
+                let mut stmt = conn.prepare(&sql)?;
+                let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
+                let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
+
+                let buf = Vec::new();
+                let mut writer = arrow_json::ArrayWriter::new(buf);
+                for batch in arrow {
+                    writer.write(&batch)?;
+                }
+                writer.finish()?;
+                Ok(writer.into_inner())
+            }
+        })
+        .await??;
+
+        if is_writable_sql(&sql_owned) {
+            let mut pool_write = self.inner.write().await;
+            pool_write.reset_pool()?;
         }
-        writer.finish()?;
-        Ok(writer.into_inner())
+
+        Ok(result)
     }
 
     async fn get_arrow(&self, sql: &str, args: &[SqlValue]) -> Result<Vec<u8>> {
-        let pool = self.inner.read().await;
-        let conn = pool.get()?;
-        let mut stmt = conn.prepare(sql)?;
-        let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
-        let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
+        let sql_owned = sql.to_string();
+        let args = args.to_vec();
+        let pool = self.inner.clone();
 
-        let schema = arrow.get_schema();
+        let result = tokio::task::spawn_blocking({
+            let sql = sql_owned.clone();
+            move || -> Result<Vec<u8>> {
+                let conn = pool.blocking_read().get()?;
+                let mut stmt = conn.prepare(&sql)?;
+                let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
+                let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
 
-        let mut buffer: Vec<u8> = Vec::new();
-        let mut writer = arrow_ipc::writer::FileWriter::try_new(&mut buffer, schema.as_ref())?;
-        for batch in arrow {
-            writer.write(&batch)?;
+                let schema = arrow.get_schema();
+                let mut buffer: Vec<u8> = Vec::new();
+                let mut writer = arrow_ipc::writer::FileWriter::try_new(&mut buffer, schema.as_ref())?;
+                for batch in arrow {
+                    writer.write(&batch)?;
+                }
+                writer.finish()?;
+                Ok(buffer)
+            }
+        })
+        .await??;
+
+        if is_writable_sql(&sql_owned) {
+            let mut pool_write = self.inner.write().await;
+            pool_write.reset_pool()?;
         }
-        writer.finish()?;
 
-        Ok(buffer)
+        Ok(result)
     }
 
     async fn get_record_batches(&self, sql: &str, args: &[SqlValue]) -> Result<Vec<RecordBatch>> {
-        let pool = self.inner.read().await;
-        let conn = pool.get()?;
-        let mut stmt = conn.prepare(sql)?;
-        let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
-        let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
-        Ok(arrow.collect())
+        let sql_owned = sql.to_string();
+        let args = args.to_vec();
+        let pool = self.inner.clone();
+
+        let result = tokio::task::spawn_blocking({
+            let sql = sql_owned.clone();
+            move || -> Result<Vec<RecordBatch>> {
+                let conn = pool.blocking_read().get()?;
+                let mut stmt = conn.prepare(&sql)?;
+                let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
+                let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
+                Ok(arrow.collect())
+            }
+        })
+        .await??;
+
+        if is_writable_sql(&sql_owned) {
+            let mut pool_write = self.inner.write().await;
+            pool_write.reset_pool()?;
+        }
+
+        Ok(result)
     }
 }
