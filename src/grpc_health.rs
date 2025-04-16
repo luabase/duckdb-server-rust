@@ -1,7 +1,8 @@
+use grpc_health_v1::health_check_response::ServingStatus;
 pub use grpc_health_v1::health_server::{Health, HealthServer};
 pub use grpc_health_v1::{HealthCheckRequest, HealthCheckResponse};
-use grpc_health_v1::health_check_response::ServingStatus;
 use tonic::{Request, Response, Status};
+use tracing::info;
 
 pub mod grpc_health_v1 {
     tonic::include_proto!("grpc.health.v1");
@@ -15,7 +16,7 @@ pub struct HealthCheckService {}
 impl Health for HealthCheckService {
     async fn check(&self, request: Request<HealthCheckRequest>) -> Result<Response<HealthCheckResponse>, Status> {
         let service_name = request.into_inner().service;
-        println!("HealthCheck requested for service: {}", service_name);
+        info!("HealthCheck requested for service: {}", service_name);
 
         Ok(tonic::Response::new(HealthCheckResponse {
             status: ServingStatus::Serving as i32,
