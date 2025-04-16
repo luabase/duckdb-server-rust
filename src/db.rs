@@ -2,6 +2,7 @@ use anyhow::Result;
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use duckdb::{params_from_iter, types::ToSql, AccessMode, Config, DuckdbConnectionManager};
+use log::info;
 use sqlparser::{ast::Statement, dialect::GenericDialect, parser::Parser};
 use std::sync::{Arc, Mutex};
 
@@ -24,6 +25,10 @@ pub struct ConnectionPool {
 
 impl ConnectionPool {
     pub fn new(db_path: &str, pool_size: u32, access_mode: AccessMode) -> Result<Self> {
+        info!(
+            "Creating connection pool: db_path={}, pool_size={}, access_mode={:?}",
+            db_path, pool_size, access_mode
+        );
         let config = Config::default()
             .access_mode(match access_mode {
                 AccessMode::ReadOnly => AccessMode::ReadOnly,
@@ -43,10 +48,15 @@ impl ConnectionPool {
     }
 
     pub fn get(&self) -> Result<r2d2::PooledConnection<DuckdbConnectionManager>> {
+        info!("Checking out connection from pool: db_path={}", self.db_path);
         Ok(self.pool.lock().unwrap().get()?)
     }
 
     fn reset_pool(&self) -> Result<()> {
+        info!(
+            "Resetting connection pool: db_path={}, pool_size={}, access_mode={:?}",
+            self.db_path, self.pool_size, self.access_mode
+        );
         let config = Config::default()
             .access_mode(match self.access_mode {
                 AccessMode::ReadOnly => AccessMode::ReadOnly,
