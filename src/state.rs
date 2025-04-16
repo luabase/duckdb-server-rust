@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::db::{ConnectionPool, Database};
+use crate::db::{Database, SafeConnectionPool};
 use crate::interfaces::{AppError, DbConfig, DbDefaults, DbPath, DbState};
 
 const AUTOINSTALL_QUERY: &str = r#"
@@ -69,7 +69,7 @@ impl AppState {
 
         let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
 
-        let db = ConnectionPool::new(path.to_str().unwrap(), self.defaults.connection_pool_size, access_mode)?;
+        let db = SafeConnectionPool::new(path.to_str().unwrap(), self.defaults.connection_pool_size, access_mode)?;
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
 
         db.execute(AUTOINSTALL_QUERY).await?;
@@ -124,7 +124,7 @@ impl AppState {
         );
 
         let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
-        let db = ConnectionPool::new(&db_path.path, effective_pool_size, access_mode)?;
+        let db = SafeConnectionPool::new(&db_path.path, effective_pool_size, access_mode)?;
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
 
         db.execute(AUTOINSTALL_QUERY).await?;
@@ -158,7 +158,7 @@ impl AppState {
             };
 
             let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
-            let db = ConnectionPool::new(&config.path, effective_pool_size, access_mode)?;
+            let db = SafeConnectionPool::new(&config.path, effective_pool_size, access_mode)?;
             let cache = Mutex::new(lru::LruCache::new(db_state.config.cache_size.try_into()?));
 
             db.execute(AUTOINSTALL_QUERY).await?;

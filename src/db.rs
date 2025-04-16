@@ -2,9 +2,10 @@ use anyhow::Result;
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use duckdb::{params_from_iter, types::ToSql, AccessMode, Config, DuckdbConnectionManager};
-use log::info;
 use sqlparser::{ast::Statement, dialect::GenericDialect, parser::Parser};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tracing::log::info;
 
 use crate::interfaces::SqlValue;
 
@@ -20,7 +21,7 @@ pub struct ConnectionPool {
     db_path: String,
     pool_size: u32,
     access_mode: AccessMode,
-    pool: Arc<Mutex<r2d2::Pool<DuckdbConnectionManager>>>,
+    pool: r2d2::Pool<DuckdbConnectionManager>,
 }
 
 impl ConnectionPool {
@@ -36,6 +37,7 @@ impl ConnectionPool {
                 AccessMode::Automatic => AccessMode::Automatic,
             })?
             .threads(pool_size as i64)?;
+
         let manager = DuckdbConnectionManager::file_with_flags(db_path, config)?;
         let pool = r2d2::Pool::builder().max_size(pool_size).build(manager)?;
 
@@ -43,16 +45,16 @@ impl ConnectionPool {
             db_path: db_path.to_string(),
             pool_size,
             access_mode,
-            pool: Arc::new(Mutex::new(pool)),
+            pool,
         })
     }
 
     pub fn get(&self) -> Result<r2d2::PooledConnection<DuckdbConnectionManager>> {
         info!("Checking out connection from pool: db_path={}", self.db_path);
-        Ok(self.pool.lock().unwrap().get()?)
+        Ok(self.pool.get()?)
     }
 
-    fn reset_pool(&self) -> Result<()> {
+    pub fn reset_pool(&mut self) -> Result<()> {
         info!(
             "Resetting connection pool: db_path={}, pool_size={}, access_mode={:?}",
             self.db_path, self.pool_size, self.access_mode
@@ -64,12 +66,23 @@ impl ConnectionPool {
                 AccessMode::Automatic => AccessMode::Automatic,
             })?
             .threads(self.pool_size as i64)?;
-        let manager = DuckdbConnectionManager::file_with_flags(&self.db_path, config)?;
-        let new_pool = r2d2::Pool::builder().max_size(self.pool_size).build(manager)?;
 
-        let mut pool_lock = self.pool.lock().unwrap();
-        *pool_lock = new_pool;
+        let manager = DuckdbConnectionManager::file_with_flags(&self.db_path, config)?;
+        self.pool = r2d2::Pool::builder().max_size(self.pool_size).build(manager)?;
+
         Ok(())
+    }
+}
+
+pub struct SafeConnectionPool {
+    inner: Arc<RwLock<ConnectionPool>>,
+}
+
+impl SafeConnectionPool {
+    pub fn new(db_path: &str, pool_size: u32, access_mode: AccessMode) -> Result<Self> {
+        Ok(Self {
+            inner: Arc::new(RwLock::new(ConnectionPool::new(db_path, pool_size, access_mode)?)),
+        })
     }
 }
 
@@ -85,7 +98,6 @@ fn is_writable_sql(sql: &str) -> bool {
             | Statement::CreateIndex { .. }
             | Statement::Drop { .. }
             | Statement::AlterTable { .. }
-            | Statement::SetVariable { .. }
             | Statement::Copy { .. }
             | Statement::Truncate { .. }
             | Statement::Merge { .. }
@@ -101,26 +113,31 @@ fn is_writable_sql(sql: &str) -> bool {
             }),
             _ => false,
         }),
-        Err(_) => true,
+        Err(_) => false,
     }
 }
 
 #[async_trait]
-impl Database for ConnectionPool {
+impl Database for SafeConnectionPool {
     async fn execute(&self, sql: &str) -> Result<()> {
-        let conn = self.get()?;
-        conn.execute_batch(sql)?;
-        drop(conn);
+        {
+            let pool = self.inner.read().await;
+            let conn = pool.get()?;
+            conn.execute_batch(sql)?;
+        }
 
         if is_writable_sql(sql) {
-            self.reset_pool()?;
+            print!("+++ RESETTING SQL {:?}", sql);
+            let mut pool_write = self.inner.write().await;
+            pool_write.reset_pool()?;
         }
 
         Ok(())
     }
 
     async fn get_json(&self, sql: &str, args: &[SqlValue]) -> Result<Vec<u8>> {
-        let conn = self.get()?;
+        let pool = self.inner.read().await;
+        let conn = pool.get()?;
         let mut stmt = conn.prepare(sql)?;
         let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
         let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
@@ -135,7 +152,8 @@ impl Database for ConnectionPool {
     }
 
     async fn get_arrow(&self, sql: &str, args: &[SqlValue]) -> Result<Vec<u8>> {
-        let conn = self.get()?;
+        let pool = self.inner.read().await;
+        let conn = pool.get()?;
         let mut stmt = conn.prepare(sql)?;
         let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
         let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
@@ -153,7 +171,8 @@ impl Database for ConnectionPool {
     }
 
     async fn get_record_batches(&self, sql: &str, args: &[SqlValue]) -> Result<Vec<RecordBatch>> {
-        let conn = self.get()?;
+        let pool = self.inner.read().await;
+        let conn = pool.get()?;
         let mut stmt = conn.prepare(sql)?;
         let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
         let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
