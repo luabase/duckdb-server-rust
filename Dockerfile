@@ -16,6 +16,12 @@ ENV LIBRARY_PATH=/usr/local/lib:$LIBRARY_PATH
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
 
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+RUN cargo build --release && rm -rf src
+
+COPY . .
+
 RUN cargo install --path .
 
 RUN echo "ulimit -n 65535" >> /etc/profile
