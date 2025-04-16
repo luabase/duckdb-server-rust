@@ -127,7 +127,6 @@ impl Database for SafeConnectionPool {
         }
 
         if is_writable_sql(sql) {
-            print!("+++ RESETTING SQL {:?}", sql);
             let mut pool_write = self.inner.write().await;
             pool_write.reset_pool()?;
         }
