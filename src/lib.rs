@@ -5,7 +5,6 @@ mod constants;
 mod db;
 mod flight;
 pub mod grpc_health;
-mod hostname;
 mod interfaces;
 mod query;
 mod state;

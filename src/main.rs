@@ -1,7 +1,6 @@
 use anyhow::Result;
 use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
-use git_version::git_version;
 use listenfd::ListenFd;
 use std::{
     collections::HashMap,
@@ -23,12 +22,9 @@ mod constants;
 mod db;
 mod flight;
 mod grpc_health;
-mod hostname;
 mod interfaces;
 mod query;
 mod state;
-
-const GIT_VERSION: &str = git_version!();
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -99,7 +95,7 @@ fn parse_db_dynamic_roots(s: &str) -> Result<(String, Vec<String>, String), Stri
 }
 
 fn main() {
-    println!("DuckDB server version {} (git {}).", env!("CARGO_PKG_VERSION"), GIT_VERSION);
+    println!("DuckDB server version {}.", *FULL_VERSION);
 
     let worker_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
 
