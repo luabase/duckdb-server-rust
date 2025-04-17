@@ -3,6 +3,7 @@ use sqlparser::{
     dialect::DuckDbDialect,
     parser::Parser,
 };
+use tracing::log::info;
 
 pub fn enforce_query_limit(sql: &str, limit: usize) -> anyhow::Result<String> {
     let dialect = DuckDbDialect {};
@@ -11,7 +12,10 @@ pub fn enforce_query_limit(sql: &str, limit: usize) -> anyhow::Result<String> {
     for stmt in &mut statements {
         if let Statement::Query(query) = stmt {
             if query.limit.is_none() {
+                let original_query = query.to_string();
                 query.limit = Some(Expr::Value(Value::Number(limit.to_string(), false).into()));
+                let rewritten_query = query.to_string();
+                info!("Enforced query limit: original='{}', rewritten='{}'", original_query, rewritten_query);
             }
         }
     }
