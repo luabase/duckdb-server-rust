@@ -5,6 +5,8 @@ steps:
       - '--context=.'
       - '--destination=us-central1-docker.pkg.dev/$PROJECT_ID/duckdb/duckdb-server:latest'
       - '--destination=us-central1-docker.pkg.dev/$PROJECT_ID/duckdb/duckdb-server:$SHORT_SHA'
+      - '--build-arg=PROJECT_ID=$PROJECT_ID'
+      - '--build-arg=GIT_HASH=$SHORT_SHA'
       - '--cache=true'
       - '--cache-ttl=24h'
 options:
