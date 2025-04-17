@@ -23,6 +23,7 @@ mod flight;
 mod grpc_health;
 mod interfaces;
 mod query;
+mod sql;
 mod state;
 
 #[derive(Parser, Debug)]
@@ -63,6 +64,10 @@ struct Args {
     /// Database access mode
     #[arg(long, default_value = "automatic")]
     access_mode: String,
+
+    /// Default row limit
+    #[arg(long, default_value_t = DEFAULT_ROW_LIMIT)]
+    row_limit: usize,
 }
 
 fn parse_db(s: &str) -> Result<(String, String), String> {
@@ -152,6 +157,7 @@ async fn app_main() -> Result<(), Box<dyn std::error::Error>> {
         access_mode: args.access_mode,
         cache_size: args.cache_size,
         connection_pool_size: args.connection_pool_size.unwrap_or(parallelism as u32),
+        row_limit: args.row_limit,
     };
 
     let app_state = Arc::new(AppState {

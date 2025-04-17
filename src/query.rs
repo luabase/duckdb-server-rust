@@ -62,6 +62,7 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
                 let persist = params.persist.unwrap_or(false);
                 let invalidate = params.invalidate.unwrap_or(false);
                 let args = params.args.unwrap_or_default();
+                let limit = params.limit.unwrap_or(state.defaults.row_limit);
                 let buffer = retrieve(
                     &db_state.cache,
                     sql,
@@ -69,7 +70,7 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
                     &Command::Arrow,
                     persist,
                     invalidate,
-                    || db_state.db.get_arrow(sql, &args),
+                    || db_state.db.get_arrow(sql, &args, limit),
                 )
                 .await?;
                 Ok(QueryResponse::Arrow(buffer))
@@ -92,8 +93,9 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
                 let persist = params.persist.unwrap_or(false);
                 let invalidate = params.invalidate.unwrap_or(false);
                 let args = params.args.unwrap_or_default();
+                let limit = params.limit.unwrap_or(state.defaults.row_limit);
                 let json: Vec<u8> = retrieve(&db_state.cache, sql, &args, &Command::Json, persist, invalidate, || {
-                    db_state.db.get_json(sql, &args)
+                    db_state.db.get_json(sql, &args, limit)
                 })
                 .await?;
 

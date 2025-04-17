@@ -23,6 +23,7 @@ pub struct DbDefaults {
     pub access_mode: String,
     pub cache_size: usize,
     pub connection_pool_size: u32,
+    pub row_limit: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -82,6 +83,7 @@ pub struct QueryParams {
     pub sql: Option<String>,
     pub args: Option<Vec<SqlValue>>,
     pub name: Option<String>,
+    pub limit: Option<usize>,
 }
 
 pub enum QueryResponse {

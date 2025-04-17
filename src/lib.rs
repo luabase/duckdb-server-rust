@@ -6,6 +6,7 @@ mod flight;
 pub mod grpc_health;
 mod interfaces;
 mod query;
+mod sql;
 mod state;
 
 pub use app::app;
