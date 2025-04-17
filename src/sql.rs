@@ -1,12 +1,12 @@
 use sqlparser::{
     ast::{Expr, Statement, Value},
-    dialect::DuckDbDialect,
+    dialect::GenericDialect,
     parser::Parser,
 };
 use tracing::log::info;
 
 pub fn enforce_query_limit(sql: &str, limit: usize) -> anyhow::Result<String> {
-    let dialect = DuckDbDialect {};
+    let dialect = GenericDialect {};
     let mut statements = Parser::parse_sql(&dialect, sql)?;
 
     for stmt in &mut statements {
@@ -28,7 +28,7 @@ pub fn enforce_query_limit(sql: &str, limit: usize) -> anyhow::Result<String> {
 }
 
 pub fn is_writable_sql(sql: &str) -> bool {
-    let dialect = DuckDbDialect {};
+    let dialect = GenericDialect {};
     match Parser::parse_sql(&dialect, sql) {
         Ok(statements) => statements.iter().any(|stmt| match stmt {
             Statement::Insert { .. }
