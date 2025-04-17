@@ -70,11 +70,11 @@ pub async fn app(app_state: Arc<AppState>, timeout: u32) -> Result<Router> {
 
     let header_layer = ServiceBuilder::new()
         .layer(SetResponseHeaderLayer::if_not_present(
-            HeaderName::from_static("X-Backend-Hostname"),
+            HeaderName::from_lowercase(b"x-backend-hostname")?,
             HeaderValue::from_str(&hostname)?,
         ))
         .layer(SetResponseHeaderLayer::if_not_present(
-            HeaderName::from_static("X-Server-Version"),
+            HeaderName::from_lowercase(b"x-server-version")?,
             HeaderValue::from_str(full_version)?,
         ));
 
