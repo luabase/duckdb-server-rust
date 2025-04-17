@@ -52,10 +52,11 @@ impl FlightService for FlightServer {
             .sql
             .ok_or_else(|| Status::invalid_argument("SQL query missing"))?;
         let args = params.args.unwrap_or_default();
+        let limit = params.limit.unwrap_or(self.state.defaults.row_limit);
 
         let batches = db_state
             .db
-            .get_record_batches(&sql, &args)
+            .get_record_batches(&sql, &args, limit)
             .await
             .map_err(|e| Status::internal(e.to_string()))?;
 

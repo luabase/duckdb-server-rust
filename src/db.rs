@@ -2,19 +2,19 @@ use anyhow::Result;
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use duckdb::{params_from_iter, types::ToSql, AccessMode, Config, DuckdbConnectionManager};
-use sqlparser::{ast::Statement, dialect::GenericDialect, parser::Parser};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::log::info;
 
 use crate::interfaces::SqlValue;
+use crate::sql::{enforce_query_limit, is_writable_sql};
 
 #[async_trait]
 pub trait Database: Send + Sync {
     async fn execute(&self, sql: &str) -> Result<()>;
-    async fn get_json(&self, sql: &str, args: &[SqlValue]) -> Result<Vec<u8>>;
-    async fn get_arrow(&self, sql: &str, args: &[SqlValue]) -> Result<Vec<u8>>;
-    async fn get_record_batches(&self, sql: &str, args: &[SqlValue]) -> Result<Vec<RecordBatch>>;
+    async fn get_json(&self, sql: &str, args: &[SqlValue], limit: usize) -> Result<Vec<u8>>;
+    async fn get_arrow(&self, sql: &str, args: &[SqlValue], limit: usize) -> Result<Vec<u8>>;
+    async fn get_record_batches(&self, sql: &str, args: &[SqlValue], limit: usize) -> Result<Vec<RecordBatch>>;
 }
 
 pub struct ConnectionPool {
@@ -86,37 +86,6 @@ impl SafeConnectionPool {
     }
 }
 
-fn is_writable_sql(sql: &str) -> bool {
-    let dialect = GenericDialect {};
-    match Parser::parse_sql(&dialect, sql) {
-        Ok(statements) => statements.iter().any(|stmt| match stmt {
-            Statement::Insert { .. }
-            | Statement::Update { .. }
-            | Statement::Delete { .. }
-            | Statement::CreateTable { .. }
-            | Statement::CreateView { .. }
-            | Statement::CreateIndex { .. }
-            | Statement::Drop { .. }
-            | Statement::AlterTable { .. }
-            | Statement::Copy { .. }
-            | Statement::Truncate { .. }
-            | Statement::Merge { .. }
-            | Statement::Grant { .. }
-            | Statement::Revoke { .. } => true,
-            Statement::Query(query) => query.with.as_ref().is_some_and(|with| {
-                with.cte_tables.iter().any(|cte| {
-                    matches!(
-                        cte.query.body.as_ref(),
-                        sqlparser::ast::SetExpr::Insert { .. } | sqlparser::ast::SetExpr::Update { .. }
-                    )
-                })
-            }),
-            _ => false,
-        }),
-        Err(_) => false,
-    }
-}
-
 #[async_trait]
 impl Database for SafeConnectionPool {
     async fn execute(&self, sql: &str) -> Result<()> {
@@ -134,16 +103,16 @@ impl Database for SafeConnectionPool {
         Ok(())
     }
 
-    async fn get_json(&self, sql: &str, args: &[SqlValue]) -> Result<Vec<u8>> {
+    async fn get_json(&self, sql: &str, args: &[SqlValue], limit: usize) -> Result<Vec<u8>> {
         let sql_owned = sql.to_string();
+        let effective_sql = enforce_query_limit(&sql_owned, limit)?;
         let args = args.to_vec();
         let pool = self.inner.clone();
 
         let result = tokio::task::spawn_blocking({
-            let sql = sql_owned.clone();
             move || -> Result<Vec<u8>> {
                 let conn = pool.blocking_read().get()?;
-                let mut stmt = conn.prepare(&sql)?;
+                let mut stmt = conn.prepare(&effective_sql)?;
                 let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
                 let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
 
@@ -166,16 +135,16 @@ impl Database for SafeConnectionPool {
         Ok(result)
     }
 
-    async fn get_arrow(&self, sql: &str, args: &[SqlValue]) -> Result<Vec<u8>> {
+    async fn get_arrow(&self, sql: &str, args: &[SqlValue], limit: usize) -> Result<Vec<u8>> {
         let sql_owned = sql.to_string();
+        let effective_sql = enforce_query_limit(&sql_owned, limit)?;
         let args = args.to_vec();
         let pool = self.inner.clone();
 
         let result = tokio::task::spawn_blocking({
-            let sql = sql_owned.clone();
             move || -> Result<Vec<u8>> {
                 let conn = pool.blocking_read().get()?;
-                let mut stmt = conn.prepare(&sql)?;
+                let mut stmt = conn.prepare(&effective_sql)?;
                 let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
                 let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
 
@@ -199,16 +168,16 @@ impl Database for SafeConnectionPool {
         Ok(result)
     }
 
-    async fn get_record_batches(&self, sql: &str, args: &[SqlValue]) -> Result<Vec<RecordBatch>> {
+    async fn get_record_batches(&self, sql: &str, args: &[SqlValue], limit: usize) -> Result<Vec<RecordBatch>> {
         let sql_owned = sql.to_string();
+        let effective_sql = enforce_query_limit(&sql_owned, limit)?;
         let args = args.to_vec();
         let pool = self.inner.clone();
 
         let result = tokio::task::spawn_blocking({
-            let sql = sql_owned.clone();
             move || -> Result<Vec<RecordBatch>> {
                 let conn = pool.blocking_read().get()?;
-                let mut stmt = conn.prepare(&sql)?;
+                let mut stmt = conn.prepare(&effective_sql)?;
                 let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
                 let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
                 Ok(arrow.collect())
