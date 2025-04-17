@@ -1,4 +1,6 @@
 ARG PROJECT_ID
+ARG GIT_HASH
+ENV GIT_HASH=$GIT_HASH
 
 FROM us-central1-docker.pkg.dev/$PROJECT_ID/duckdb/duckdb:latest
 

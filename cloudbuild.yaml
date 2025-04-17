@@ -4,6 +4,8 @@ steps:
     - 'build'
     - '--build-arg'
     - 'PROJECT_ID=$PROJECT_ID'
+    - '--build-arg'
+    - 'GIT_HASH=$SHORT_SHA'
     - '-t'
     - 'us-central1-docker.pkg.dev/$PROJECT_ID/duckdb/duckdb-server:latest'
     - '.'

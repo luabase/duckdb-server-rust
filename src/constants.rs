@@ -10,7 +10,7 @@ pub const DEFAULT_CONNECTION_POOL_SIZE: u32 = 10;
 #[allow(unused)]
 pub const DEFAULT_CACHE_SIZE: usize = 1000;
 #[allow(unused)]
-pub const GIT_VERSION: &str = git_version!();
+pub const GIT_VERSION: &str = git_version!(fallback = env!("GIT_HASH"));
 
 pub static FULL_VERSION: Lazy<String> = Lazy::new(|| {
     format!("{} (git {})", env!("CARGO_PKG_VERSION"), GIT_VERSION)
