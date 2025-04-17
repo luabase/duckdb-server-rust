@@ -1315,6 +1315,7 @@ dependencies = [
  "http-body-util",
  "listenfd",
  "lru",
+ "once_cell",
  "prost",
  "prost-types",
  "r2d2",
