@@ -63,7 +63,11 @@ pub async fn app(app_state: Arc<AppState>, timeout: u32) -> Result<Router> {
         .allow_headers(Any)
         .max_age(Duration::from_secs(86400));
 
-    let hostname = hostname::get()?.into_string().unwrap_or_else(|_| "unknown".into());
+    let hostname = hostname::get()?.into_string().unwrap_or_default();
+    let hostname = if hostname.is_empty() { "unknown".into() } else { hostname };
+
+    let full_version = if FULL_VERSION.is_empty() { "unknown" } else { &FULL_VERSION };
+
     let header_layer = ServiceBuilder::new()
         .layer(SetResponseHeaderLayer::if_not_present(
             HeaderName::from_static("X-Backend-Hostname"),
@@ -71,7 +75,7 @@ pub async fn app(app_state: Arc<AppState>, timeout: u32) -> Result<Router> {
         ))
         .layer(SetResponseHeaderLayer::if_not_present(
             HeaderName::from_static("X-Server-Version"),
-            HeaderValue::from_static(&FULL_VERSION),
+            HeaderValue::from_str(full_version)?,
         ));
 
     Ok(Router::new()
