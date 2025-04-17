@@ -2,14 +2,9 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
-use crate::bundle::{create, load};
 use crate::cache::retrieve;
 use crate::interfaces::{AppError, Command, QueryParams, QueryResponse};
 use crate::state::AppState;
-
-fn create_bundle_path(bundle_name: &str) -> PathBuf {
-    Path::new(".mosaic").join("bundle").join(bundle_name)
-}
 
 pub async fn with_db_retry<F>(state: &AppState, params: QueryParams, query_fn: F) -> Result<QueryResponse, AppError>
 where
@@ -110,27 +105,6 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
                 };
 
                 Ok(QueryResponse::Json(string))
-            }
-            else {
-                Err(AppError::BadRequest)
-            }
-        }
-        Some(Command::CreateBundle) => {
-            if let Some(queries) = params.queries {
-                let bundle_name = params.name.unwrap_or_else(|| "default".to_string());
-                let bundle_path = create_bundle_path(&bundle_name);
-                create(db_state.db.as_ref(), &db_state.cache, queries, &bundle_path).await?;
-                Ok(QueryResponse::Empty)
-            }
-            else {
-                Err(AppError::BadRequest)
-            }
-        }
-        Some(Command::LoadBundle) => {
-            if let Some(bundle_name) = params.name {
-                let bundle_path = create_bundle_path(&bundle_name);
-                load(db_state.db.as_ref(), &db_state.cache, &bundle_path).await?;
-                Ok(QueryResponse::Empty)
             }
             else {
                 Err(AppError::BadRequest)

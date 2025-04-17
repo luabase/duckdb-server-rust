@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use tokio::sync::Mutex;
 
-use crate::bundle::Query as BundleQuery;
 use crate::db::Database;
 
 #[derive(Debug, Clone)]
@@ -46,8 +45,6 @@ pub enum Command {
     Arrow,
     Exec,
     Json,
-    CreateBundle,
-    LoadBundle,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -85,7 +82,6 @@ pub struct QueryParams {
     pub sql: Option<String>,
     pub args: Option<Vec<SqlValue>>,
     pub name: Option<String>,
-    pub queries: Option<Vec<BundleQuery>>,
 }
 
 pub enum QueryResponse {
