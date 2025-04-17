@@ -16,7 +16,6 @@ use crate::interfaces::{DbDefaults, DbPath};
 use crate::state::AppState;
 
 mod app;
-mod bundle;
 mod cache;
 mod constants;
 mod db;
