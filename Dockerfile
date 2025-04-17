@@ -1,10 +1,11 @@
 ARG PROJECT_ID
-ARG GIT_HASH
-ENV GIT_HASH=$GIT_HASH
 
 FROM us-central1-docker.pkg.dev/$PROJECT_ID/duckdb/duckdb:latest
 
 WORKDIR /app
+
+ARG GIT_HASH
+ENV GIT_HASH=$GIT_HASH
 
 RUN apt-get update && apt-get install -y lld clang bash protobuf-compiler
 
