@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::log::info;
 
+use crate::constants::AUTOINSTALL_QUERY;
 use crate::interfaces::SqlValue;
 use crate::sql::{enforce_query_limit, is_writable_sql};
 
@@ -41,6 +42,8 @@ impl ConnectionPool {
         let manager = DuckdbConnectionManager::file_with_flags(db_path, config)?;
         let pool = r2d2::Pool::builder().max_size(pool_size).build(manager)?;
 
+        _ = pool.get()?.execute_batch(AUTOINSTALL_QUERY);
+
         Ok(Self {
             db_path: db_path.to_string(),
             pool_size,
@@ -59,6 +62,7 @@ impl ConnectionPool {
             "Resetting connection pool: db_path={}, pool_size={}, access_mode={:?}",
             self.db_path, self.pool_size, self.access_mode
         );
+
         let config = Config::default()
             .access_mode(match self.access_mode {
                 AccessMode::ReadOnly => AccessMode::ReadOnly,
@@ -69,6 +73,8 @@ impl ConnectionPool {
 
         let manager = DuckdbConnectionManager::file_with_flags(&self.db_path, config)?;
         self.pool = r2d2::Pool::builder().max_size(self.pool_size).build(manager)?;
+
+        _ = self.pool.get()?.execute_batch(AUTOINSTALL_QUERY);
 
         Ok(())
     }
