@@ -15,3 +15,13 @@ pub const GIT_VERSION: &str = git_version!(fallback = env!("GIT_HASH"));
 pub const DEFAULT_ROW_LIMIT: usize = 2000;
 
 pub static FULL_VERSION: Lazy<String> = Lazy::new(|| format!("{} (git {})", env!("CARGO_PKG_VERSION"), GIT_VERSION));
+
+#[allow(unused)]
+pub const AUTOINSTALL_QUERY: &str = r#"
+SET autoinstall_known_extensions=1;
+SET autoload_known_extensions=1;
+INSTALL icu; LOAD icu;
+INSTALL json; LOAD json;
+INSTALL httpfs; LOAD httpfs;
+INSTALL iceberg; LOAD iceberg;
+"#;
