@@ -4,6 +4,7 @@ use std::pin::Pin;
 use crate::cache::retrieve;
 use crate::interfaces::{AppError, Command, QueryParams, QueryResponse};
 use crate::state::AppState;
+use tokio::time::{sleep, Duration};
 
 pub async fn with_db_retry<F>(state: &AppState, params: QueryParams, query_fn: F) -> Result<QueryResponse, AppError>
 where
@@ -13,7 +14,7 @@ where
     ) -> Pin<Box<dyn Future<Output = Result<QueryResponse, AppError>> + Send + 'a>>,
 {
     let mut attempt = 0;
-    let max_retries = 1; // Define the number of retries.
+    let max_retries = 3;
 
     loop {
         attempt += 1;
@@ -22,18 +23,36 @@ where
             Ok(response) => return Ok(response),
             Err(AppError::Error(err)) => {
                 if let Some(duckdb::Error::DuckDBFailure(_, _)) = err.downcast_ref::<duckdb::Error>() {
-                    if err.to_string().to_lowercase().contains("stale file handle") && attempt <= max_retries {
-                        tracing::warn!(
-                            "DuckDB failure encountered: {}. Retrying after recreating connection. Attempt: {}",
-                            err,
-                            attempt
-                        );
-                        state
-                            .recreate_db(params.dynamic_id.as_deref(), &params.database)
-                            .await?;
-                        continue;
+                    if err.to_string().to_lowercase().contains("stale file handle") {
+                        if attempt <= max_retries {
+                            let delay = if attempt == 1 {
+                                Duration::from_secs(0)
+                            }
+                            else {
+                                Duration::from_secs(2u64.pow(attempt - 2))
+                            };
+
+                            tracing::warn!(
+                                "DuckDB failure encountered: {}. Retrying after recreating connection in {:?}. Attempt: {}",
+                                err,
+                                delay,
+                                attempt
+                            );
+
+                            sleep(delay).await;
+
+                            state
+                                .recreate_db(params.dynamic_id.as_deref(), &params.database)
+                                .await?;
+
+                            continue;
+                        }
+                        else {
+                            tracing::error!("Max retries exceeded for DuckDB failure: {}", err);
+                        }
                     }
                 }
+
                 return Err(AppError::Error(err));
             }
             Err(err) => return Err(err),
