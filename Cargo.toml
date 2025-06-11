@@ -39,7 +39,7 @@ sqlparser = "0.55"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tonic = "0.12.3"
-tonic-reflection = "0.12.3"
+tonic-health = "0.12.3"
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["cors", "compression-full", "set-header", "timeout", "trace"] }
 tracing = "0.1"

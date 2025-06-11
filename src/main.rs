@@ -20,7 +20,6 @@ mod cache;
 mod constants;
 mod db;
 mod flight;
-mod grpc_health;
 mod interfaces;
 mod query;
 mod sql;
