@@ -42,7 +42,7 @@ where
                             sleep(delay).await;
 
                             state
-                                .recreate_db(params.dynamic_id.as_deref(), &params.database)
+                                .reconnect_db(params.dynamic_id.as_deref(), &params.database)
                                 .await?;
 
                             continue;

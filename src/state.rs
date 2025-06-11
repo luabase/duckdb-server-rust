@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::db::SafeConnectionPool;
-use crate::interfaces::{AppError, DbConfig, DbDefaults, DbPath, DbState};
+use crate::db::ConnectionPool;
+use crate::interfaces::{AppError, DbDefaults, DbPath, DbState};
 
 pub struct AppState {
     pub defaults: DbDefaults,
@@ -60,17 +60,11 @@ impl AppState {
 
         let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
 
-        let db = SafeConnectionPool::new(path.to_str().unwrap(), self.defaults.connection_pool_size, access_mode)?;
+        let db = ConnectionPool::new(path.to_str().unwrap(), self.defaults.connection_pool_size, access_mode)?;
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
 
         let new_state = Arc::new(DbState {
-            config: DbConfig {
-                id: id.clone(),
-                path: path.to_str().unwrap().to_string(),
-                cache_size: self.defaults.cache_size,
-                connection_pool_size: self.defaults.connection_pool_size,
-            },
-            db: Box::new(db),
+            db: Box::new(Arc::new(db)),
             cache,
         });
 
@@ -113,17 +107,11 @@ impl AppState {
         );
 
         let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
-        let db = SafeConnectionPool::new(&db_path.path, effective_pool_size, access_mode)?;
+        let db = ConnectionPool::new(&db_path.path, effective_pool_size, access_mode)?;
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
 
         let new_state = Arc::new(DbState {
-            config: DbConfig {
-                id: id.to_string(),
-                path: db_path.path.clone(),
-                cache_size: self.defaults.cache_size,
-                connection_pool_size: self.defaults.connection_pool_size,
-            },
-            db: Box::new(db),
+            db: Box::new(Arc::new(db)),
             cache,
         });
 
@@ -131,38 +119,12 @@ impl AppState {
         Ok(new_state)
     }
 
-    pub async fn recreate_db(&self, dynamic: Option<&str>, database: &str) -> Result<(), AppError> {
+    pub async fn reconnect_db(&self, dynamic: Option<&str>, database: &str) -> Result<(), AppError> {
         let id = self.get_state_id(dynamic, database)?;
-        let mut states = self.states.lock().await;
+        let states = self.states.lock().await;
 
         if let Some(db_state) = states.get(&id) {
-            let config = db_state.config.clone();
-            let effective_pool_size = if config.path == ":memory:" {
-                1
-            }
-            else {
-                config.connection_pool_size
-            };
-
-            let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
-            let db = SafeConnectionPool::new(&config.path, effective_pool_size, access_mode)?;
-            let cache = Mutex::new(lru::LruCache::new(db_state.config.cache_size.try_into()?));
-
-            tracing::info!(
-                "Recreated DuckDB connection with ID: {}, path: {}, pool size: {}, access_mode: {}",
-                config.id,
-                config.path,
-                effective_pool_size,
-                self.defaults.access_mode
-            );
-
-            let new_state = Arc::new(DbState {
-                config,
-                db: Box::new(db),
-                cache,
-            });
-
-            states.insert(id.to_string(), new_state);
+            db_state.db.reconnect()?;
         }
         else {
             return Err(AppError::Error(anyhow::anyhow!("Database ID {} not found", id)));
