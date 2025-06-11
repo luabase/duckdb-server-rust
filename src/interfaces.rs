@@ -11,14 +11,6 @@ use tokio::sync::Mutex;
 use crate::db::Database;
 
 #[derive(Debug, Clone)]
-pub struct DbConfig {
-    pub id: String,
-    pub path: String,
-    pub cache_size: usize,
-    pub connection_pool_size: u32,
-}
-
-#[derive(Debug, Clone)]
 pub struct DbDefaults {
     pub access_mode: String,
     pub cache_size: usize,
@@ -35,7 +27,6 @@ pub struct DbPath {
 }
 
 pub struct DbState {
-    pub config: DbConfig,
     pub db: Box<dyn Database>,
     pub cache: Mutex<lru::LruCache<String, Vec<u8>>>,
 }
