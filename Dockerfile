@@ -1,6 +1,6 @@
 ARG PROJECT_ID
 
-FROM us-central1-docker.pkg.dev/$PROJECT_ID/duckdb/duckdb:latest
+FROM rustlang/rust:nightly
 
 WORKDIR /app
 
@@ -14,10 +14,6 @@ ENV CXX=clang++
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=lld"
 
 RUN cargo install systemfd
-
-ENV LIBRARY_PATH=/usr/local/lib:$LIBRARY_PATH
-ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
 
 COPY Cargo.toml Cargo.lock ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs
