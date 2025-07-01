@@ -72,6 +72,7 @@ pub struct QueryParams {
     pub persist: Option<bool>,
     pub invalidate: Option<bool>,
     pub sql: Option<String>,
+    pub prepare_sql: Option<String>,
     pub args: Option<Vec<SqlValue>>,
     pub name: Option<String>,
     pub limit: Option<usize>,

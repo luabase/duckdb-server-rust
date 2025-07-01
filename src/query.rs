@@ -76,19 +76,20 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
 
     match command {
         Some(Command::Arrow) => {
-            if let Some(sql) = params.sql.as_deref() {
+            if let Some(sql) = params.sql {
                 let persist = params.persist.unwrap_or(false);
                 let invalidate = params.invalidate.unwrap_or(false);
                 let args = params.args.unwrap_or_default();
                 let limit = params.limit.unwrap_or(state.defaults.row_limit);
+                let prepare_sql = params.prepare_sql;
                 let buffer = retrieve(
                     &db_state.cache,
-                    sql,
+                    sql.clone().as_str(),
                     &args,
                     &Command::Arrow,
                     persist,
                     invalidate,
-                    || db_state.db.get_arrow(sql, &args, limit),
+                    || db_state.db.get_arrow(sql, &args, prepare_sql, limit),
                 )
                 .await?;
                 Ok(QueryResponse::Arrow(buffer))
@@ -107,13 +108,14 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
             }
         }
         Some(Command::Json) => {
-            if let Some(sql) = params.sql.as_deref() {
+            if let Some(sql) = params.sql {
                 let persist = params.persist.unwrap_or(false);
                 let invalidate = params.invalidate.unwrap_or(false);
                 let args = params.args.unwrap_or_default();
                 let limit = params.limit.unwrap_or(state.defaults.row_limit);
-                let json: Vec<u8> = retrieve(&db_state.cache, sql, &args, &Command::Json, persist, invalidate, || {
-                    db_state.db.get_json(sql, &args, limit)
+                let prepare_sql = params.prepare_sql;
+                let json: Vec<u8> = retrieve(&db_state.cache, sql.clone().as_str(), &args, &Command::Json, persist, invalidate, || {
+                    db_state.db.get_json(sql, &args, prepare_sql, limit)
                 })
                 .await?;
 
