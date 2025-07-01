@@ -25,6 +25,25 @@ mod query;
 mod sql;
 mod state;
 
+extern "C" {
+    pub fn duckdb_library_version() -> *const std::os::raw::c_char;
+}
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+enum Command {
+    #[command(about = "Run the DuckDB server")] 
+    Serve(Args),
+    #[command(about = "Print the DuckDB library version")] 
+    Version,
+}
+
+#[derive(Parser, Debug)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -98,23 +117,50 @@ fn parse_db_dynamic_roots(s: &str) -> Result<(String, Vec<String>, String), Stri
 }
 
 fn main() {
+    let c_str = unsafe { duckdb_library_version() };
+    let duck_version = unsafe { std::ffi::CStr::from_ptr(c_str).to_str().unwrap() };
+
     println!("DuckDB server version {}.", *FULL_VERSION);
+    println!("DuckDB library version: {}", duck_version.to_string());
 
-    let worker_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    let platform = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+    let platform_str = match platform {
+        "macos" => "osx",
+        other => other,
+    };
+    let arch_str = match arch {
+        "aarch64" => "arm64",
+        other => other,
+    };
+    let ext_path = format!(
+        "{}/.duckdb/extensions/{}/{}_{}",
+        std::env::var("HOME").unwrap_or_else(|_| "~".to_string()),
+        duck_version,
+        platform_str,
+        arch_str
+    );
+    println!("DuckDB extension path: {}", ext_path);
 
-    println!("Starting server with {} worker threads", worker_threads);
-
-    let _ = Builder::new_multi_thread()
-        .worker_threads(worker_threads)
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(app_main());
+    let cli = Cli::parse();
+    match cli.command {
+        Command::Serve(args) => {
+            let worker_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+            println!("Starting server with {} worker threads", worker_threads);
+            let _ = Builder::new_multi_thread()
+                .worker_threads(worker_threads)
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(app_main(args));
+        }
+        Command::Version => {
+            // noop
+        }
+    }
 }
 
-async fn app_main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
-
+async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let db_args: Vec<(String, String)> = if args.db_paths.is_empty() {
         vec![(DEFAULT_DB_ID.to_string(), DEFAULT_DB_PATH.to_string())]
     }
