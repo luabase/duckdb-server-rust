@@ -1,38 +1,44 @@
 use sqlparser::{
     ast::{Expr, LimitClause, Statement, Value},
-    dialect::GenericDialect,
+    dialect::DuckDbDialect,
     parser::Parser,
 };
-use tracing::log::info;
+use tracing::log::{info, warn};
 
 pub fn enforce_query_limit(sql: &str, limit: usize) -> anyhow::Result<String> {
-    let dialect = GenericDialect {};
-    let mut statements = Parser::parse_sql(&dialect, sql)?;
-
-    for stmt in &mut statements {
-        if let Statement::Query(query) = stmt {
-            if query.limit_clause.is_none() {
-                let original_query = query.to_string();
-                query.limit_clause = Some(LimitClause::LimitOffset {
-                        limit: Some(Expr::value(Value::Number(limit.to_string(), false))),
-                        offset: None,
-                        limit_by: vec![]
-                    });
-                let rewritten_query = query.to_string();
-                info!("Enforced query limit: original='{}', rewritten='{}'", original_query, rewritten_query);
+    let dialect = DuckDbDialect {};
+    match Parser::parse_sql(&dialect, sql) {
+        Ok(mut statements) => {
+            for stmt in &mut statements {
+                if let Statement::Query(query) = stmt {
+                    if query.limit_clause.is_none() {
+                        let original_query = query.to_string();
+                        query.limit_clause = Some(LimitClause::LimitOffset {
+                                limit: Some(Expr::value(Value::Number(limit.to_string(), false))),
+                                offset: None,
+                                limit_by: vec![]
+                            });
+                        let rewritten_query = query.to_string();
+                        info!("Enforced query limit: original='{}', rewritten='{}'", original_query, rewritten_query);
+                    }
+                }
             }
+
+            Ok(statements
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+                .join("; "))
+        }
+        Err(e) => {
+            warn!("Skipping query limit enforcement due to SQL parse error: {e}. Query: {sql}");
+            Ok(sql.to_string())
         }
     }
-
-    Ok(statements
-        .into_iter()
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>()
-        .join("; "))
 }
 
 pub fn is_writable_sql(sql: &str) -> bool {
-    let dialect = GenericDialect {};
+    let dialect = DuckDbDialect {};
     match Parser::parse_sql(&dialect, sql) {
         Ok(statements) => statements.iter().any(|stmt| match stmt {
             Statement::Insert { .. }
