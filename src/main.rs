@@ -132,6 +132,7 @@ fn main() {
     };
     let arch_str = match arch {
         "aarch64" => "arm64",
+        "amd64" => "x86_64",
         other => other,
     };
     let home_dir = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("/root"));
