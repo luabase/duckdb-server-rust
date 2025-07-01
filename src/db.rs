@@ -39,6 +39,8 @@ impl ConnectionPool {
                 AccessMode::ReadWrite => AccessMode::ReadWrite,
                 AccessMode::Automatic => AccessMode::Automatic,
             })?
+            .allow_unsigned_extensions()?
+            .enable_autoload_extension(true)?
             .threads(pool_size as i64)?;
 
         let inode = std::fs::metadata(db_path)?.ino();
