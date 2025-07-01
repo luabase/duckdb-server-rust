@@ -13,9 +13,9 @@ use crate::sql::{enforce_query_limit, is_writable_sql};
 #[async_trait]
 pub trait Database: Send + Sync {
     async fn execute(&self, sql: &str) -> Result<()>;
-    async fn get_json(&self, sql: &str, args: &[SqlValue], limit: usize) -> Result<Vec<u8>>;
-    async fn get_arrow(&self, sql: &str, args: &[SqlValue], limit: usize) -> Result<Vec<u8>>;
-    async fn get_record_batches(&self, sql: &str, args: &[SqlValue], limit: usize) -> Result<Vec<RecordBatch>>;
+    async fn get_json(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize) -> Result<Vec<u8>>;
+    async fn get_arrow(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize) -> Result<Vec<u8>>;
+    async fn get_record_batches(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize) -> Result<Vec<RecordBatch>>;
     fn reconnect(&self) -> Result<()>;
 }
 
@@ -137,8 +137,9 @@ impl Database for Arc<ConnectionPool> {
         Ok(())
     }
 
-    async fn get_json(&self, sql: &str, args: &[SqlValue], limit: usize) -> Result<Vec<u8>> {
+    async fn get_json(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize) -> Result<Vec<u8>> {
         let sql_owned = sql.to_string();
+        let prepare_sql_owned = prepare_sql.map(|s| s.to_string());
         let effective_sql = enforce_query_limit(&sql_owned, limit)?;
         let args = args.to_vec();
         let pool = Arc::clone(self);
@@ -146,6 +147,10 @@ impl Database for Arc<ConnectionPool> {
         let result = tokio::task::spawn_blocking({
             move || -> Result<Vec<u8>> {
                 let conn = pool.get()?;
+                if let Some(prepare_sql) = prepare_sql_owned {
+                    conn.execute_batch(&prepare_sql)?;
+                }
+
                 let mut stmt = conn.prepare(&effective_sql)?;
                 let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
                 let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
@@ -168,8 +173,9 @@ impl Database for Arc<ConnectionPool> {
         Ok(result)
     }
 
-    async fn get_arrow(&self, sql: &str, args: &[SqlValue], limit: usize) -> Result<Vec<u8>> {
+    async fn get_arrow(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize) -> Result<Vec<u8>> {
         let sql_owned = sql.to_string();
+        let prepare_sql_owned = prepare_sql.map(|s| s.to_string());
         let effective_sql = enforce_query_limit(&sql_owned, limit)?;
         let args = args.to_vec();
         let pool = Arc::clone(self);
@@ -177,6 +183,10 @@ impl Database for Arc<ConnectionPool> {
         let result = tokio::task::spawn_blocking({
             move || -> Result<Vec<u8>> {
                 let conn = pool.get()?;
+                if let Some(prepare_sql) = prepare_sql_owned {
+                    conn.execute_batch(&prepare_sql)?;
+                }
+
                 let mut stmt = conn.prepare(&effective_sql)?;
                 let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
                 let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
@@ -200,15 +210,20 @@ impl Database for Arc<ConnectionPool> {
         Ok(result)
     }
 
-    async fn get_record_batches(&self, sql: &str, args: &[SqlValue], limit: usize) -> Result<Vec<RecordBatch>> {
+    async fn get_record_batches(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize) -> Result<Vec<RecordBatch>> {
         let sql_owned = sql.to_string();
         let effective_sql = enforce_query_limit(&sql_owned, limit)?;
         let args = args.to_vec();
         let pool = Arc::clone(self);
+        let prepare_sql_owned = prepare_sql.map(|s| s.to_string());
 
         let result = tokio::task::spawn_blocking({
             move || -> Result<Vec<RecordBatch>> {
                 let conn = pool.get()?;
+                if let Some(prepare_sql) = prepare_sql_owned {
+                    conn.execute_batch(&prepare_sql)?;
+                }
+
                 let mut stmt = conn.prepare(&effective_sql)?;
                 let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
                 let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
