@@ -1,6 +1,7 @@
 use anyhow::Result;
 use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
+use dirs;
 use listenfd::ListenFd;
 use std::{
     collections::HashMap,
@@ -133,9 +134,10 @@ fn main() {
         "aarch64" => "arm64",
         other => other,
     };
+    let home_dir = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("/root"));
     let ext_path = format!(
         "{}/.duckdb/extensions/{}/{}_{}",
-        std::env::var("HOME").unwrap_or_else(|_| "~".to_string()),
+        home_dir.display(),
         duck_version,
         platform_str,
         arch_str
