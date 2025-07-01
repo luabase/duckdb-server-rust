@@ -18,6 +18,7 @@ pub static FULL_VERSION: Lazy<String> = Lazy::new(|| format!("{} (git {})", env!
 
 #[allow(unused)]
 pub const AUTOINSTALL_QUERY: &str = r#"
+SET allow_unsigned_extensions=1;
 SET autoinstall_known_extensions=1;
 SET autoload_known_extensions=1;
 INSTALL icu; LOAD icu;
