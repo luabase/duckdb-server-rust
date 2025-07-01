@@ -110,6 +110,8 @@ impl ConnectionPool {
                 AccessMode::ReadWrite => AccessMode::ReadWrite,
                 AccessMode::Automatic => AccessMode::Automatic,
             })?
+            .allow_unsigned_extensions()?
+            .enable_autoload_extension(true)?
             .threads(self.pool_size as i64)?;
 
         let manager = DuckdbConnectionManager::file_with_flags(&self.db_path, config)?;
