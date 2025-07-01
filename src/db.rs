@@ -138,8 +138,8 @@ impl Database for Arc<ConnectionPool> {
     }
 
     async fn get_json(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize) -> Result<Vec<u8>> {
-        let sql_owned = sql.to_string();
-        let prepare_sql_owned = prepare_sql.map(|s| s.to_string());
+        let sql_owned = sql.clone();
+        let prepare_sql_owned = prepare_sql.clone();
         let effective_sql = enforce_query_limit(&sql_owned, limit)?;
         let args = args.to_vec();
         let pool = Arc::clone(self);
@@ -174,8 +174,8 @@ impl Database for Arc<ConnectionPool> {
     }
 
     async fn get_arrow(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize) -> Result<Vec<u8>> {
-        let sql_owned = sql.to_string();
-        let prepare_sql_owned = prepare_sql.map(|s| s.to_string());
+        let sql_owned = sql.clone();
+        let prepare_sql_owned = prepare_sql.clone();
         let effective_sql = enforce_query_limit(&sql_owned, limit)?;
         let args = args.to_vec();
         let pool = Arc::clone(self);
@@ -211,11 +211,11 @@ impl Database for Arc<ConnectionPool> {
     }
 
     async fn get_record_batches(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize) -> Result<Vec<RecordBatch>> {
-        let sql_owned = sql.to_string();
+        let sql_owned = sql.clone();
         let effective_sql = enforce_query_limit(&sql_owned, limit)?;
         let args = args.to_vec();
         let pool = Arc::clone(self);
-        let prepare_sql_owned = prepare_sql.map(|s| s.to_string());
+        let prepare_sql_owned = prepare_sql.clone();
 
         let result = tokio::task::spawn_blocking({
             move || -> Result<Vec<RecordBatch>> {
