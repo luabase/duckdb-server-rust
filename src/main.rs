@@ -121,7 +121,7 @@ fn main() {
     let duck_version = unsafe { std::ffi::CStr::from_ptr(c_str).to_str().unwrap() };
 
     println!("DuckDB server version {}.", *FULL_VERSION);
-    println!("DuckDB library version: {}", duck_version.to_string());
+    println!("DuckDB library version: {}", duck_version);
 
     let platform = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
