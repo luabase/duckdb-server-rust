@@ -23,7 +23,8 @@ where
             Ok(response) => return Ok(response),
             Err(AppError::Error(err)) => {
                 if let Some(duckdb::Error::DuckDBFailure(_, _)) = err.downcast_ref::<duckdb::Error>() {
-                    if err.to_string().to_lowercase().contains("stale file handle") {
+                    let err_str = err.to_string().to_lowercase();
+                    if err_str.contains("stale file handle") || err_str.contains("write-write conflict") {
                         if attempt <= max_retries {
                             let delay = if attempt == 1 {
                                 Duration::from_secs(0)
