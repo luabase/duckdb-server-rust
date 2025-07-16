@@ -26,7 +26,7 @@ mod query;
 mod sql;
 mod state;
 
-extern "C" {
+unsafe extern "C" {
     pub fn duckdb_library_version() -> *const std::os::raw::c_char;
 }
 
