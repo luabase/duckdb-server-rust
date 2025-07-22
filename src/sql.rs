@@ -44,6 +44,7 @@ pub fn is_writable_sql(sql: &str) -> bool {
             Statement::Insert { .. }
             | Statement::Update { .. }
             | Statement::Delete { .. }
+            | Statement::CreateSchema { .. }
             | Statement::CreateTable { .. }
             | Statement::CreateView { .. }
             | Statement::CreateIndex { .. }
