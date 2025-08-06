@@ -40,6 +40,12 @@ pub enum Command {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct Extension {
+    pub name: String,
+    pub source: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum SqlValue {
     Int(i64),
@@ -76,6 +82,7 @@ pub struct QueryParams {
     pub args: Option<Vec<SqlValue>>,
     pub name: Option<String>,
     pub limit: Option<usize>,
+    pub extensions: Option<Vec<Extension>>,
 }
 
 pub enum QueryResponse {

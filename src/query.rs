@@ -90,7 +90,7 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
                     &Command::Arrow,
                     persist,
                     invalidate,
-                    || db_state.db.get_arrow(sql, &args, prepare_sql, limit),
+                    || db_state.db.get_arrow(sql, &args, prepare_sql, limit, params.extensions.as_deref()),
                 )
                 .await?;
                 Ok(QueryResponse::Arrow(buffer))
@@ -101,7 +101,7 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
         }
         Some(Command::Exec) => {
             if let Some(sql) = params.sql.as_deref() {
-                db_state.db.execute(sql).await?;
+                db_state.db.execute(sql, params.extensions.as_deref()).await?;
                 Ok(QueryResponse::Empty)
             }
             else {
@@ -116,7 +116,7 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
                 let limit = params.limit.unwrap_or(state.defaults.row_limit);
                 let prepare_sql = params.prepare_sql;
                 let json: Vec<u8> = retrieve(&db_state.cache, sql.clone().as_str(), &args, &Command::Json, persist, invalidate, || {
-                    db_state.db.get_json(sql, &args, prepare_sql, limit)
+                    db_state.db.get_json(sql, &args, prepare_sql, limit, params.extensions.as_deref())
                 })
                 .await?;
 
