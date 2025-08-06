@@ -54,7 +54,7 @@ impl FlightService for FlightServer {
 
         let batches = db_state
             .db
-            .get_record_batches(sql, &args, params.prepare_sql, limit)
+            .get_record_batches(sql, &args, params.prepare_sql, limit, params.extensions.as_deref())
             .await
             .map_err(|e| Status::internal(e.to_string()))?;
 

@@ -2,20 +2,23 @@ use anyhow::Result;
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use duckdb::{params_from_iter, types::ToSql, AccessMode, Config, DuckdbConnectionManager};
+use std::collections::HashSet;
 use std::os::unix::fs::MetadataExt;
 use std::sync::Arc;
 use tracing::log::info;
 
 use crate::constants::AUTOINSTALL_QUERY;
-use crate::interfaces::SqlValue;
+use crate::interfaces::{Extension, SqlValue};
 use crate::sql::{enforce_query_limit, is_writable_sql};
+
+
 
 #[async_trait]
 pub trait Database: Send + Sync {
-    async fn execute(&self, sql: &str) -> Result<()>;
-    async fn get_json(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize) -> Result<Vec<u8>>;
-    async fn get_arrow(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize) -> Result<Vec<u8>>;
-    async fn get_record_batches(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize) -> Result<Vec<RecordBatch>>;
+    async fn execute(&self, sql: &str, extensions: Option<&[Extension]>) -> Result<()>;
+    async fn get_json(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize, extensions: Option<&[Extension]>) -> Result<Vec<u8>>;
+    async fn get_arrow(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize, extensions: Option<&[Extension]>) -> Result<Vec<u8>>;
+    async fn get_record_batches(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize, extensions: Option<&[Extension]>) -> Result<Vec<RecordBatch>>;
     fn reconnect(&self) -> Result<()>;
 }
 
@@ -24,7 +27,8 @@ pub struct ConnectionPool {
     pool_size: u32,
     access_mode: AccessMode,
     pool: parking_lot::RwLock<r2d2::Pool<DuckdbConnectionManager>>,
-    inode: parking_lot::RwLock<u64>
+    inode: parking_lot::RwLock<u64>,
+    loaded_extensions: parking_lot::RwLock<HashSet<String>>
 }
 
 impl ConnectionPool {
@@ -54,7 +58,8 @@ impl ConnectionPool {
             pool_size,
             access_mode,
             pool: parking_lot::RwLock::new(pool),
-            inode: parking_lot::RwLock::new(inode)
+            inode: parking_lot::RwLock::new(inode),
+            loaded_extensions: parking_lot::RwLock::new(HashSet::new())
         })
     }
 
@@ -126,8 +131,13 @@ impl ConnectionPool {
 
 #[async_trait]
 impl Database for Arc<ConnectionPool> {
-    async fn execute(&self, sql: &str) -> Result<()> {
+    async fn execute(&self, sql: &str, extensions: Option<&[Extension]>) -> Result<()> {
         let conn = self.get()?;
+        
+        if let Some(exts) = extensions {
+            self.load_extensions(&conn, exts)?;
+        }
+        
         conn.execute_batch(sql)?;
 
         if is_writable_sql(sql) {
@@ -137,16 +147,22 @@ impl Database for Arc<ConnectionPool> {
         Ok(())
     }
 
-    async fn get_json(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize) -> Result<Vec<u8>> {
+    async fn get_json(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize, extensions: Option<&[Extension]>) -> Result<Vec<u8>> {
         let sql_owned = sql.clone();
         let prepare_sql_owned = prepare_sql.clone();
         let effective_sql = enforce_query_limit(&sql_owned, limit)?;
         let args = args.to_vec();
         let pool = Arc::clone(self);
+        let extensions_owned = extensions.map(|exts| exts.to_vec());
 
         let result = tokio::task::spawn_blocking({
             move || -> Result<Vec<u8>> {
                 let conn = pool.get()?;
+                
+                if let Some(exts) = &extensions_owned {
+                    pool.load_extensions(&conn, exts)?;
+                }
+
                 if let Some(prepare_sql) = prepare_sql_owned {
                     conn.execute_batch(&prepare_sql)?;
                 }
@@ -173,16 +189,22 @@ impl Database for Arc<ConnectionPool> {
         Ok(result)
     }
 
-    async fn get_arrow(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize) -> Result<Vec<u8>> {
+    async fn get_arrow(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize, extensions: Option<&[Extension]>) -> Result<Vec<u8>> {
         let sql_owned = sql.clone();
         let prepare_sql_owned = prepare_sql.clone();
         let effective_sql = enforce_query_limit(&sql_owned, limit)?;
         let args = args.to_vec();
         let pool = Arc::clone(self);
+        let extensions_owned = extensions.map(|exts| exts.to_vec());
 
         let result = tokio::task::spawn_blocking({
             move || -> Result<Vec<u8>> {
                 let conn = pool.get()?;
+                
+                if let Some(exts) = &extensions_owned {
+                    pool.load_extensions(&conn, exts)?;
+                }
+
                 if let Some(prepare_sql) = prepare_sql_owned {
                     conn.execute_batch(&prepare_sql)?;
                 }
@@ -210,16 +232,22 @@ impl Database for Arc<ConnectionPool> {
         Ok(result)
     }
 
-    async fn get_record_batches(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize) -> Result<Vec<RecordBatch>> {
+    async fn get_record_batches(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize, extensions: Option<&[Extension]>) -> Result<Vec<RecordBatch>> {
         let sql_owned = sql.clone();
         let effective_sql = enforce_query_limit(&sql_owned, limit)?;
         let args = args.to_vec();
         let pool = Arc::clone(self);
         let prepare_sql_owned = prepare_sql.clone();
+        let extensions_owned = extensions.map(|exts| exts.to_vec());
 
         let result = tokio::task::spawn_blocking({
             move || -> Result<Vec<RecordBatch>> {
                 let conn = pool.get()?;
+                
+                if let Some(exts) = &extensions_owned {
+                    pool.load_extensions(&conn, exts)?;
+                }
+
                 if let Some(prepare_sql) = prepare_sql_owned {
                     conn.execute_batch(&prepare_sql)?;
                 }
@@ -239,8 +267,97 @@ impl Database for Arc<ConnectionPool> {
         Ok(result)
     }
 
+
+
     fn reconnect(&self) -> Result<()> {
         self.reset_pool(None)
     }
+}
 
+impl ConnectionPool {
+    fn load_extensions(&self, conn: &duckdb::Connection, extensions: &[Extension]) -> Result<()> {
+        let mut loaded_set = self.loaded_extensions.write();
+        
+        let extensions_to_check: Vec<_> = extensions.iter()
+            .filter(|ext| !loaded_set.contains(&ext.name))
+            .collect();
+        
+        if extensions_to_check.is_empty() {
+            return Ok(());
+        }
+        
+        let extension_names: Vec<_> = extensions_to_check.iter()
+            .map(|ext| ext.name.as_str())
+            .collect();
+        
+        let placeholders = std::iter::repeat("?").take(extension_names.len()).collect::<Vec<_>>().join(",");
+        let query = format!("SELECT extension_name, installed, loaded FROM duckdb_extensions() WHERE extension_name IN ({})", placeholders);
+        
+        let mut stmt = conn.prepare(&query)?;
+        let result = stmt.query_arrow(params_from_iter(extension_names.iter()))?;
+        let batches: Vec<_> = result.collect();
+        
+        let mut current_states = std::collections::HashMap::new();
+        for batch in batches {
+            if batch.num_columns() >= 3 {
+                let name_col = batch.column(0);
+                let installed_col = batch.column(1);
+                let loaded_col = batch.column(2);
+                
+                if let (Some(name_array), Some(installed_array), Some(loaded_array)) = (
+                    name_col.as_any().downcast_ref::<arrow::array::StringArray>(),
+                    installed_col.as_any().downcast_ref::<arrow::array::BooleanArray>(),
+                    loaded_col.as_any().downcast_ref::<arrow::array::BooleanArray>()
+                ) {
+                    for i in 0..batch.num_rows() {
+                        let name = name_array.value(i).to_string();
+                        let installed = installed_array.value(i);
+                        let loaded = loaded_array.value(i);
+                        current_states.insert(name, (installed, loaded));
+                    }
+                }
+            }
+        }
+        
+        let mut install_commands = Vec::new();
+        for ext in &extensions_to_check {
+            let (installed, loaded) = current_states.get(&ext.name).unwrap_or(&(false, false));
+            
+            if *loaded {
+                loaded_set.insert(ext.name.clone());
+            } else if !*installed {
+                let install_sql = if let Some(source) = &ext.source {
+                    format!("INSTALL '{}' FROM '{}'", ext.name, source)
+                } else {
+                    format!("INSTALL '{}'", ext.name)
+                };
+                install_commands.push(install_sql);
+            }
+        }
+        
+        if !install_commands.is_empty() {
+            let install_batch = install_commands.join(";\n");
+            conn.execute_batch(&install_batch)?;
+        }
+        
+        let mut load_commands = Vec::new();
+        for ext in &extensions_to_check {
+            let (_installed, loaded) = current_states.get(&ext.name).unwrap_or(&(false, false));
+            
+            if !*loaded {
+                load_commands.push(format!("LOAD '{}'", ext.name));
+            }
+        }
+        
+        if !load_commands.is_empty() {
+            let load_batch = load_commands.join(";\n");
+            conn.execute_batch(&load_batch)?;
+        }
+        
+        for ext in extensions_to_check {
+            loaded_set.insert(ext.name.clone());
+        }
+
+        Ok(())
+    }
 }
