@@ -283,8 +283,11 @@ impl ConnectionPool {
             .collect();
         
         if extensions_to_check.is_empty() {
+            info!("All requested extensions already loaded");
             return Ok(());
         }
+        
+        info!("Processing {} extensions: {:?}", extensions_to_check.len(), extensions_to_check.iter().map(|e| &e.name).collect::<Vec<_>>());
         
         let extension_names: Vec<_> = extensions_to_check.iter()
             .map(|ext| ext.name.as_str())
@@ -324,11 +327,14 @@ impl ConnectionPool {
             let (installed, loaded) = current_states.get(&ext.name).unwrap_or(&(false, false));
             
             if *loaded {
+                info!("Extension '{}' already loaded", ext.name);
                 loaded_set.insert(ext.name.clone());
             } else if !*installed {
                 let install_sql = if let Some(source) = &ext.source {
+                    info!("Installing extension '{}' from source '{}'", ext.name, source);
                     format!("INSTALL '{}' FROM '{}'", ext.name, source)
                 } else {
+                    info!("Installing extension '{}'", ext.name);
                     format!("INSTALL '{}'", ext.name)
                 };
                 install_commands.push(install_sql);
@@ -345,6 +351,7 @@ impl ConnectionPool {
             let (_installed, loaded) = current_states.get(&ext.name).unwrap_or(&(false, false));
             
             if !*loaded {
+                info!("Loading extension '{}'", ext.name);
                 load_commands.push(format!("LOAD '{}'", ext.name));
             }
         }
