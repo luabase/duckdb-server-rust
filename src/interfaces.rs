@@ -112,6 +112,7 @@ impl IntoResponse for QueryResponse {
 pub enum AppError {
     Error(anyhow::Error),
     BadRequest,
+    Timeout,
 }
 
 impl IntoResponse for AppError {
@@ -126,6 +127,7 @@ impl IntoResponse for AppError {
                     .into_response()
             }
             AppError::BadRequest => (StatusCode::BAD_REQUEST).into_response(),
+            AppError::Timeout => (StatusCode::REQUEST_TIMEOUT).into_response(),
         }
     }
 }
@@ -135,6 +137,7 @@ impl fmt::Display for AppError {
         match self {
             AppError::Error(err) => write!(f, "{}", err),
             AppError::BadRequest => write!(f, "Bad request"),
+            AppError::Timeout => write!(f, "Request timed out"),
         }
     }
 }
