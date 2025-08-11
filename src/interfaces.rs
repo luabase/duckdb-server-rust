@@ -16,6 +16,7 @@ pub struct DbDefaults {
     pub cache_size: usize,
     pub connection_pool_size: u32,
     pub row_limit: usize,
+    pub pool_timeout: u64,
 }
 
 #[derive(Debug, Clone)]

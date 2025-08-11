@@ -47,8 +47,8 @@ pub struct ConnectionPool {
 impl ConnectionPool {
     pub fn new(db_path: &str, pool_size: u32, timeout: Duration, access_mode: AccessMode) -> Result<Self> {
         info!(
-            "Creating connection pool: db_path={}, pool_size={}, access_mode={:?}",
-            db_path, pool_size, access_mode
+            "Creating connection pool: db_path={}, pool_size={}, access_mode={:?}, timeout={:?}",
+            db_path, pool_size, access_mode, timeout
         );
 
         let inode = std::fs::metadata(db_path)?.ino();
