@@ -43,11 +43,12 @@ impl AppState {
         let path = PathBuf::from(&db_path.path).join(database);
         if path.exists() {
             tracing::info!(
-                "Creating DuckDB connection with ID: {}, path: {}, pool size: {}, access_mode: {}",
+                "Creating DuckDB connection with ID: {}, path: {}, pool size: {}, access_mode: {}, timeout: {}",
                 id,
                 path.display(),
                 self.defaults.connection_pool_size,
-                self.defaults.access_mode
+                self.defaults.access_mode,
+                self.defaults.pool_timeout
             );
         }
         else {
@@ -61,7 +62,13 @@ impl AppState {
 
         let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
 
-        let db = ConnectionPool::new(path.to_str().unwrap(), self.defaults.connection_pool_size, Duration::from_secs(10), access_mode)?;
+        let db = ConnectionPool::new(
+            path.to_str().unwrap(), 
+            self.defaults.connection_pool_size, 
+            Duration::from_secs(self.defaults.pool_timeout), 
+            access_mode
+        )?;
+
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
 
         let new_state = Arc::new(DbState {
@@ -100,15 +107,22 @@ impl AppState {
         };
 
         tracing::info!(
-            "Creating DuckDB connection with ID: {}, path: {}, pool size: {}, access_mode: {}",
+            "Creating DuckDB connection with ID: {}, path: {}, pool size: {}, access_mode: {}, timeout: {}",
             id,
             db_path.path,
             effective_pool_size,
-            self.defaults.access_mode
+            self.defaults.access_mode,
+            self.defaults.pool_timeout
         );
 
         let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
-        let db = ConnectionPool::new(&db_path.path, effective_pool_size, Duration::from_secs(10), access_mode)?;
+        let db = ConnectionPool::new(
+            &db_path.path, 
+            effective_pool_size, 
+            Duration::from_secs(self.defaults.pool_timeout), 
+            access_mode
+        )?;
+
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
 
         let new_state = Arc::new(DbState {

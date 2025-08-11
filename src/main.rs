@@ -61,7 +61,7 @@ struct Args {
     address: IpAddr,
 
     /// HTTP Port
-    #[arg(short, long, default_value_t = 3000)]
+    #[arg(short = 'p', long, default_value_t = 3000)]
     http_port: u16,
 
     /// gRPC Port
@@ -87,6 +87,10 @@ struct Args {
     /// Default row limit
     #[arg(long, default_value_t = DEFAULT_ROW_LIMIT)]
     row_limit: usize,
+
+    /// Connection pool timeout in seconds
+    #[arg(long, default_value_t = 10)]
+    pool_timeout: u64,
 }
 
 fn parse_db(s: &str) -> Result<(String, String), String> {
@@ -206,6 +210,7 @@ async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         cache_size: args.cache_size,
         connection_pool_size: args.connection_pool_size.unwrap_or(parallelism as u32),
         row_limit: args.row_limit,
+        pool_timeout: args.pool_timeout,
     };
 
     let app_state = Arc::new(AppState {
