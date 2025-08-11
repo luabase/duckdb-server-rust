@@ -20,7 +20,38 @@ use crate::constants::FULL_VERSION;
 use crate::interfaces::{AppError, QueryParams, QueryResponse};
 use crate::query;
 use crate::state::AppState;
+use serde::Serialize;
 
+#[derive(Serialize)]
+struct PoolStatusResponse {
+    id: String,
+    db_path: String,
+    pool_size: usize,
+    access_mode: String,
+    in_use: usize,
+    idle: usize,
+    total: usize,
+    timeout: Duration,
+}
+
+#[derive(Serialize)]
+struct PoolStatusError {
+    id: String,
+    error: String,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum PoolStatusResult {
+    Success(PoolStatusResponse),
+    Error(PoolStatusError),
+}
+
+#[derive(Serialize)]
+struct StatusResponse {
+    pools: Vec<PoolStatusResult>,
+    total_pools: usize,
+}
 
 #[axum::debug_handler]
 async fn handle_get(
@@ -46,6 +77,42 @@ async fn handle_post(
     .await?;
 
     Ok(res)
+}
+
+#[axum::debug_handler]
+async fn status_handler(
+    State(app_state): State<Arc<AppState>>,
+) -> Result<Json<StatusResponse>, AppError> {
+    let states = app_state.states.lock().await;
+    let mut pool_statuses = Vec::new();
+
+    for (id, db_state) in states.iter() {
+        match db_state.db.status() {
+            Ok(pool_status) => {
+                pool_statuses.push(PoolStatusResult::Success(PoolStatusResponse {
+                    id: id.clone(),
+                    db_path: pool_status.db_path,
+                    pool_size: pool_status.pool_size,
+                    access_mode: pool_status.access_mode,
+                    in_use: pool_status.in_use,
+                    idle: pool_status.idle,
+                    total: pool_status.total,
+                    timeout: pool_status.timeout,
+                }));
+            }
+            Err(error) => {
+                pool_statuses.push(PoolStatusResult::Error(PoolStatusError {
+                    id: id.clone(),
+                    error: error.to_string(),
+                }));
+            }
+        }
+    }
+
+    Ok(Json(StatusResponse {
+        pools: pool_statuses,
+        total_pools: states.len(),
+    }))
 }
 
 async fn readiness_probe() -> &'static str {
@@ -84,6 +151,7 @@ pub async fn app(app_state: Arc<AppState>, timeout: u32) -> Result<Router> {
         .route("/query/", get(handle_get).post(handle_post))
         .route("/healthz", get(readiness_probe))
         .route("/version", get(version_handler))
+        .route("/status", get(status_handler))
         .with_state(app_state)
         .layer(header_layer)
         .layer(cors)

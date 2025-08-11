@@ -3,6 +3,7 @@ use duckdb::AccessMode;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
 
 use crate::db::ConnectionPool;
@@ -60,7 +61,7 @@ impl AppState {
 
         let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
 
-        let db = ConnectionPool::new(path.to_str().unwrap(), self.defaults.connection_pool_size, access_mode)?;
+        let db = ConnectionPool::new(path.to_str().unwrap(), self.defaults.connection_pool_size, Duration::from_secs(10), access_mode)?;
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
 
         let new_state = Arc::new(DbState {
@@ -107,7 +108,7 @@ impl AppState {
         );
 
         let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
-        let db = ConnectionPool::new(&db_path.path, effective_pool_size, access_mode)?;
+        let db = ConnectionPool::new(&db_path.path, effective_pool_size, Duration::from_secs(10), access_mode)?;
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
 
         let new_state = Arc::new(DbState {
