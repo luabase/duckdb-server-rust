@@ -348,7 +348,7 @@ impl ConnectionPool {
             extensions.iter().map(|e| &e.name).collect::<Vec<_>>()
         );
         
-        let mut install_commands = Vec::new();
+        let mut commands = Vec::new();
         for ext in extensions {
             let install_sql = if let Some(source) = &ext.source {
                 info!("Installing extension {} from source {}", ext.name, source);
@@ -357,23 +357,15 @@ impl ConnectionPool {
                 info!("Installing extension {}", ext.name);
                 format!("INSTALL {}", ext.name)
             };
-            install_commands.push(install_sql);
-        }
-        
-        if !install_commands.is_empty() {
-            let install_batch = install_commands.join(";\n");
-            conn.execute_batch(&install_batch)?;
-        }
-        
-        let mut load_commands = Vec::new();
-        for ext in extensions {
+            commands.push(install_sql);
+            
             info!("Loading extension {}", ext.name);
-            load_commands.push(format!("LOAD {}", ext.name));
+            commands.push(format!("LOAD {}", ext.name));
         }
         
-        if !load_commands.is_empty() {
-            let load_batch = load_commands.join(";\n");
-            conn.execute_batch(&load_batch)?;
+        if !commands.is_empty() {
+            let batch = commands.join(";\n");
+            conn.execute_batch(&batch)?;
         }
 
         Ok(())
