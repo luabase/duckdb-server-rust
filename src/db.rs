@@ -2,7 +2,7 @@ use anyhow::Result;
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use duckdb::{params_from_iter, types::ToSql, AccessMode, Config, DuckdbConnectionManager};
-use std::collections::HashSet;
+
 use std::os::unix::fs::MetadataExt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -40,8 +40,7 @@ pub struct ConnectionPool {
     timeout: Duration,
     access_mode: AccessMode,
     pool: parking_lot::RwLock<r2d2::Pool<DuckdbConnectionManager>>,
-    inode: parking_lot::RwLock<u64>,
-    loaded_extensions: parking_lot::RwLock<HashSet<String>>
+    inode: parking_lot::RwLock<u64>
 }
 
 impl ConnectionPool {
@@ -60,8 +59,7 @@ impl ConnectionPool {
             timeout,
             access_mode,
             pool: parking_lot::RwLock::new(pool),
-            inode: parking_lot::RwLock::new(inode),
-            loaded_extensions: parking_lot::RwLock::new(HashSet::new())
+            inode: parking_lot::RwLock::new(inode)
         })
     }
 
@@ -339,80 +337,27 @@ impl Database for Arc<ConnectionPool> {
 
 impl ConnectionPool {
     fn load_extensions(&self, conn: &duckdb::Connection, extensions: &[Extension]) -> Result<()> {
-        let mut loaded_set = self.loaded_extensions.write();
-        
-        let extensions_to_check: Vec<_> = extensions.iter()
-            .filter(|ext| !loaded_set.contains(&ext.name))
-            .collect();
-        
-        if extensions_to_check.is_empty() {
-            info!("All requested extensions already loaded");
+        if extensions.is_empty() {
+            info!("No extensions to load");
             return Ok(());
         }
         
         info!(
-            "Processing {} extensions: {:?}", 
-            extensions_to_check.len(), 
-            extensions_to_check.iter().map(|e| &e.name).collect::<Vec<_>>()
+            "Loading {} extensions: {:?}", 
+            extensions.len(), 
+            extensions.iter().map(|e| &e.name).collect::<Vec<_>>()
         );
-        
-        let extension_names: Vec<_> = extensions_to_check.iter()
-            .map(|ext| ext.name.as_str())
-            .collect();
-        
-        let placeholders = std::iter::repeat("?")
-            .take(extension_names.len())
-            .collect::<Vec<_>>()
-            .join(",");
-
-        let query = format!(
-            "SELECT extension_name, installed, loaded FROM duckdb_extensions() WHERE extension_name IN ({})", 
-            placeholders
-        );
-        
-        let mut stmt = conn.prepare(&query)?;
-        let result = stmt.query_arrow(params_from_iter(extension_names.iter()))?;
-        let batches: Vec<_> = result.collect();
-        
-        let mut current_states = std::collections::HashMap::new();
-        for batch in batches {
-            if batch.num_columns() >= 3 {
-                let name_col = batch.column(0);
-                let installed_col = batch.column(1);
-                let loaded_col = batch.column(2);
-                
-                if let (Some(name_array), Some(installed_array), Some(loaded_array)) = (
-                    name_col.as_any().downcast_ref::<arrow::array::StringArray>(),
-                    installed_col.as_any().downcast_ref::<arrow::array::BooleanArray>(),
-                    loaded_col.as_any().downcast_ref::<arrow::array::BooleanArray>()
-                ) {
-                    for i in 0..batch.num_rows() {
-                        let name = name_array.value(i).to_string();
-                        let installed = installed_array.value(i);
-                        let loaded = loaded_array.value(i);
-                        current_states.insert(name, (installed, loaded));
-                    }
-                }
-            }
-        }
         
         let mut install_commands = Vec::new();
-        for ext in &extensions_to_check {
-            let (installed, loaded) = current_states.get(&ext.name).unwrap_or(&(false, false));
-            
-            if *loaded {
-                info!("Extension '{}' already loaded", ext.name);
-                loaded_set.insert(ext.name.clone());
-            } else if !*installed {
-                let install_sql = if let Some(source) = &ext.source {
-                    info!("Installing extension {} from source {}", ext.name, source);
-                    format!("INSTALL {} FROM {}", ext.name, source)
-                } else {
-                    info!("Installing extension '{}'", ext.name);
-                    format!("INSTALL {}", ext.name)
-                };
-                install_commands.push(install_sql);
-            }
+        for ext in extensions {
+            let install_sql = if let Some(source) = &ext.source {
+                info!("Installing extension {} from source {}", ext.name, source);
+                format!("INSTALL {} FROM {}", ext.name, source)
+            } else {
+                info!("Installing extension {}", ext.name);
+                format!("INSTALL {}", ext.name)
+            };
+            install_commands.push(install_sql);
         }
         
         if !install_commands.is_empty() {
@@ -421,22 +366,14 @@ impl ConnectionPool {
         }
         
         let mut load_commands = Vec::new();
-        for ext in &extensions_to_check {
-            let (_installed, loaded) = current_states.get(&ext.name).unwrap_or(&(false, false));
-            
-            if !*loaded {
-                info!("Loading extension {}", ext.name);
-                load_commands.push(format!("LOAD {}", ext.name));
-            }
+        for ext in extensions {
+            info!("Loading extension {}", ext.name);
+            load_commands.push(format!("LOAD {}", ext.name));
         }
         
         if !load_commands.is_empty() {
             let load_batch = load_commands.join(";\n");
             conn.execute_batch(&load_batch)?;
-        }
-        
-        for ext in extensions_to_check {
-            loaded_set.insert(ext.name.clone());
         }
 
         Ok(())
