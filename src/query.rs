@@ -103,7 +103,7 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
                 Ok(QueryResponse::Arrow(buffer))
             }
             else {
-                Err(AppError::BadRequest)
+                Err(AppError::BadRequest(anyhow::anyhow!("SQL query is required for Arrow command")))
             }
         }
         Some(Command::Exec) => {
@@ -112,7 +112,7 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
                 Ok(QueryResponse::Empty)
             }
             else {
-                Err(AppError::BadRequest)
+                Err(AppError::BadRequest(anyhow::anyhow!("SQL query is required for Exec command")))
             }
         }
         Some(Command::Json) => {
@@ -137,9 +137,9 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
                 Ok(QueryResponse::Json(string))
             }
             else {
-                Err(AppError::BadRequest)
+                Err(AppError::BadRequest(anyhow::anyhow!("SQL query is required for Json command")))
             }
         }
-        None => Err(AppError::BadRequest),
+        None => Err(AppError::BadRequest(anyhow::anyhow!("Query type is required"))),
     }
 }

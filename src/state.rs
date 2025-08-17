@@ -34,7 +34,7 @@ impl AppState {
         }
 
         if !db_path.is_dynamic {
-            return Err(AppError::Error(anyhow::anyhow!(
+            return Err(AppError::BadRequest(anyhow::anyhow!(
                 "Database ID {} is a static lookup",
                 dynamic
             )));
@@ -52,7 +52,7 @@ impl AppState {
             );
         }
         else {
-            return Err(AppError::Error(anyhow::anyhow!(
+            return Err(AppError::BadRequest(anyhow::anyhow!(
                 "Database {} not found for ID {} (primary ID {})",
                 database,
                 dynamic,
@@ -93,7 +93,7 @@ impl AppState {
             .ok_or_else(|| anyhow::anyhow!("Database ID {} not found", id))?;
 
         if db_path.is_dynamic {
-            return Err(AppError::Error(anyhow::anyhow!(
+            return Err(AppError::BadRequest(anyhow::anyhow!(
                 "Database ID {} is a dynamic lookup",
                 id
             )));
@@ -142,7 +142,7 @@ impl AppState {
             db_state.db.reconnect()?;
         }
         else {
-            return Err(AppError::Error(anyhow::anyhow!("Database ID {} not found", id)));
+            return Err(AppError::BadRequest(anyhow::anyhow!("Database ID {} not found", id)));
         }
 
         Ok(())
