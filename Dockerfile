@@ -7,7 +7,7 @@ WORKDIR /app
 ARG GIT_HASH
 ENV GIT_HASH=$GIT_HASH
 
-RUN apt-get update && apt-get install -y build-essential lld clang bash protobuf-compiler cmake git wget
+RUN apt-get update && apt-get install -y build-essential lld clang bash protobuf-compiler cmake git wget unzip
 
 ENV CC=clang
 ENV CXX=clang++
