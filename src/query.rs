@@ -31,7 +31,9 @@ where
                 }
                 
                 if let Some(duckdb::Error::DuckDBFailure(_, _)) = err.downcast_ref::<duckdb::Error>() {
-                    if err_str.contains("stale file handle") || err_str.contains("write-write conflict") {
+                    if err_str.contains("stale file handle") 
+                    || err_str.contains("write-write conflict") 
+                    || err_str.contains("database has been invalidated") {
                         if attempt <= max_retries {
                             let delay = if attempt == 1 {
                                 Duration::from_secs(0)
