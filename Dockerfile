@@ -7,11 +7,16 @@ WORKDIR /app
 ARG GIT_HASH
 ENV GIT_HASH=$GIT_HASH
 
-RUN apt-get update && apt-get install -y build-essential lld clang bash protobuf-compiler cmake git
+RUN apt-get update && apt-get install -y build-essential lld clang bash protobuf-compiler cmake git wget
 
 ENV CC=clang
 ENV CXX=clang++
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=lld"
+
+RUN wget -O /tmp/duckdb_cli.zip https://github.com/duckdb/duckdb/releases/latest/download/duckdb_cli-linux-amd64.zip && \
+    unzip /tmp/duckdb_cli.zip -d /usr/local/bin/ && \
+    chmod +x /usr/local/bin/duckdb && \
+    rm /tmp/duckdb_cli.zip
 
 RUN cargo install systemfd
 
