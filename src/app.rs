@@ -16,6 +16,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 
+use crate::auth::{AuthConfig, google_auth_middleware};
 use crate::constants::FULL_VERSION;
 use crate::interfaces::{AppError, QueryParams, QueryResponse};
 use crate::query;
@@ -169,7 +170,7 @@ async fn interrupt_all_connections_handler(State(app_state): State<Arc<AppState>
     query::interrupt_all_connections(&app_state).await
 }
 
-pub async fn app(app_state: Arc<AppState>, timeout: u32) -> Result<Router> {
+pub async fn app(app_state: Arc<AppState>, timeout: u32, auth_config: Option<AuthConfig>) -> Result<Router> {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods([Method::OPTIONS, Method::POST, Method::GET])
@@ -201,20 +202,45 @@ pub async fn app(app_state: Arc<AppState>, timeout: u32) -> Result<Router> {
             HeaderValue::from_str(full_version)?,
         ));
 
-    Ok(Router::new()
-        .route("/", get(readiness_probe))
-        .route("/query", get(handle_get).post(handle_post))
-        .route("/query/", get(handle_get).post(handle_post))
-        .route("/query/{query_id}", delete(cancel_query_handler))
-        .route("/queries", get(list_queries_handler))
-        .route("/interrupt-all", post(interrupt_all_connections_handler))
-        .route("/healthz", get(readiness_probe))
-        .route("/version", get(version_handler))
-        .route("/status", get(status_handler))
-        .with_state(app_state)
-        .layer(header_layer)
-        .layer(cors)
-        .layer(CompressionLayer::new())
-        .layer(TraceLayer::new_for_http())
-        .layer(TimeoutLayer::new(Duration::from_secs(timeout.into()))))
+    let router = if let Some(auth_config) = auth_config {
+        Router::new()
+            .route("/", get(readiness_probe))
+            .route("/query", get(handle_get).post(handle_post))
+            .route("/query/", get(handle_get).post(handle_post))
+            .route("/query/{query_id}", delete(cancel_query_handler))
+            .route("/queries", get(list_queries_handler))
+            .route("/interrupt-all", post(interrupt_all_connections_handler))
+            .route("/healthz", get(readiness_probe))
+            .route("/version", get(version_handler))
+            .route("/status", get(status_handler))
+            .with_state(app_state)
+            .layer(axum::middleware::from_fn_with_state(
+                auth_config,
+                google_auth_middleware,
+            ))
+            .layer(header_layer)
+            .layer(cors)
+            .layer(CompressionLayer::new())
+            .layer(TraceLayer::new_for_http())
+            .layer(TimeoutLayer::new(Duration::from_secs(timeout.into())))
+    } else {
+        Router::new()
+            .route("/", get(readiness_probe))
+            .route("/query", get(handle_get).post(handle_post))
+            .route("/query/", get(handle_get).post(handle_post))
+            .route("/query/{query_id}", delete(cancel_query_handler))
+            .route("/queries", get(list_queries_handler))
+            .route("/interrupt-all", post(interrupt_all_connections_handler))
+            .route("/healthz", get(readiness_probe))
+            .route("/version", get(version_handler))
+            .route("/status", get(status_handler))
+            .with_state(app_state)
+            .layer(header_layer)
+            .layer(cors)
+            .layer(CompressionLayer::new())
+            .layer(TraceLayer::new_for_http())
+            .layer(TimeoutLayer::new(Duration::from_secs(timeout.into())))
+    };
+
+    Ok(router)
 }
