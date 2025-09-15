@@ -10,7 +10,7 @@ mod sql;
 mod state;
 
 pub use app::app;
-pub use auth::{AuthConfig, create_auth_config, auth_middleware};
+pub use auth::{AuthConfig, create_auth_config, selective_auth_middleware};
 pub use cache::{get_key, retrieve};
 pub use db::{ConnectionPool, Database};
 pub use flight::{FlightServer, serve};
