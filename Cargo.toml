@@ -7,11 +7,11 @@ description = "Definite DuckDB Server"
 
 [dependencies]
 anyhow = "1.0"
-arrow = "56"
-arrow-flight = { version = "56", features = ["flight-sql-experimental"] }
-arrow-json = "56"
-arrow-array = { version = "56", features = ["chrono-tz"] }
-arrow-ipc = "56"
+arrow = "55"
+arrow-flight = { version = "55", features = ["flight-sql-experimental"] }
+arrow-json = "55"
+arrow-array = { version = "55", features = ["chrono-tz"] }
+arrow-ipc = "55"
 async-stream = "0.3"
 async-trait = "0.1"
 chrono = "0.4.40"
