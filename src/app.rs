@@ -4,7 +4,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{HeaderValue, Method, header::HeaderName},
     response::Json,
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use std::{sync::Arc, time::Duration};
 use tower::ServiceBuilder;
@@ -121,31 +121,6 @@ async fn version_handler() -> &'static str {
     &FULL_VERSION
 }
 
-#[axum::debug_handler]
-async fn handle_cancellable_get(
-    State(app_state): State<Arc<AppState>>,
-    Query(params): Query<QueryParams>,
-) -> Result<QueryResponse, AppError> {
-    let res = query::with_db_retry(&app_state, params, |state, params| {
-        Box::pin(query::handle_cancellable_query(state, params))
-    })
-    .await?;
-
-    Ok(res)
-}
-
-#[axum::debug_handler]
-async fn handle_cancellable_post(
-    State(app_state): State<Arc<AppState>>,
-    Json(params): Json<QueryParams>,
-) -> Result<QueryResponse, AppError> {
-    let res = query::with_db_retry(&app_state, params, |state, params| {
-        Box::pin(query::handle_cancellable_query(state, params))
-    })
-    .await?;
-
-    Ok(res)
-}
 
 #[axum::debug_handler]
 async fn cancel_query_handler(
@@ -201,15 +176,7 @@ pub async fn app(app_state: Arc<AppState>, timeout: u32) -> Result<Router> {
         .route("/", get(readiness_probe))
         .route("/query", get(handle_get).post(handle_post))
         .route("/query/", get(handle_get).post(handle_post))
-        .route(
-            "/query/cancellable",
-            get(handle_cancellable_get).post(handle_cancellable_post),
-        )
-        .route(
-            "/query/cancellable/",
-            get(handle_cancellable_get).post(handle_cancellable_post),
-        )
-        .route("/query/cancel/:query_id", post(cancel_query_handler))
+        .route("/query/{query_id}", delete(cancel_query_handler))
         .route("/queries", get(list_queries_handler))
         .route("/interrupt-all", post(interrupt_all_connections_handler))
         .route("/healthz", get(readiness_probe))
