@@ -48,7 +48,11 @@ impl FlightService for FlightServer {
 
         let sql = params
             .sql
-            .ok_or_else(|| Status::invalid_argument("SQL query missing"))?;
+            .ok_or_else(|| Status::invalid_argument("SQL query is required"))?;
+            
+        if sql.trim().is_empty() {
+            return Err(Status::invalid_argument("SQL query cannot be empty"));
+        }
         let args = params.args.unwrap_or_default();
         let limit = params.limit.unwrap_or(self.state.defaults.row_limit);
 
