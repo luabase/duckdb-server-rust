@@ -4,12 +4,9 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
 pub struct AuthConfig {
-    pub service_account_email: String,
-    pub allowed_emails: HashSet<String>,
     pub require_auth: bool,
     pub auth_token: Option<String>,
 }
@@ -17,8 +14,6 @@ pub struct AuthConfig {
 impl Default for AuthConfig {
     fn default() -> Self {
         Self {
-            service_account_email: String::new(),
-            allowed_emails: HashSet::new(),
             require_auth: false,
             auth_token: None,
         }
@@ -72,14 +67,10 @@ fn validate_auth_token(token: &str, config: &AuthConfig) -> bool {
 }
 
 pub fn create_auth_config(
-    service_account_email: Option<String>,
-    allowed_emails: Vec<String>,
     require_auth: bool,
     auth_token: Option<String>,
 ) -> AuthConfig {
     AuthConfig {
-        service_account_email: service_account_email.unwrap_or_default(),
-        allowed_emails: allowed_emails.into_iter().collect(),
         require_auth,
         auth_token,
     }
