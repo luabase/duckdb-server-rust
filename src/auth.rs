@@ -1,5 +1,5 @@
 use axum::{
-    extract::Request,
+    extract::{Request, State},
     http::{header::AUTHORIZATION, StatusCode},
     middleware::Next,
     response::Response,
@@ -20,17 +20,21 @@ impl Default for AuthConfig {
     }
 }
 
-pub async fn auth_middleware(
+pub async fn selective_auth_middleware(
+    State(auth_config): State<AuthConfig>,
     request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let auth_config = request
-        .extensions()
-        .get::<AuthConfig>()
-        .cloned()
-        .unwrap_or_default();
+
+    let path = request.uri().path();
 
     if !auth_config.require_auth {
+        return Ok(next.run(request).await);
+    }
+
+    let public_paths = ["/", "/healthz", "/version", "/query", "/query/"];
+    
+    if public_paths.contains(&path) {
         return Ok(next.run(request).await);
     }
 
@@ -44,13 +48,13 @@ pub async fn auth_middleware(
             &header[7..]
         }
         _ => {
-            tracing::warn!("Missing or invalid Authorization header");
+            tracing::warn!("Missing or invalid Authorization header for protected path: {}", path);
             return Err(StatusCode::UNAUTHORIZED);
         }
     };
 
     if !validate_auth_token(token, &auth_config) {
-        tracing::warn!("Invalid authentication token");
+        tracing::warn!("Invalid authentication token for protected path: {}", path);
         return Err(StatusCode::UNAUTHORIZED);
     }
 
