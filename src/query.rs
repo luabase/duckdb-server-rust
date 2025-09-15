@@ -77,10 +77,13 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
         return Err(AppError::BadRequest(anyhow::anyhow!("Query type is required")));
     }
 
-    let sql = params.sql.clone().unwrap_or_default();
+    let sql = params.sql.clone().ok_or_else(|| {
+        AppError::BadRequest(anyhow::anyhow!("SQL query is required"))
+    })?;
+    
     if sql.trim().is_empty() {
         return Err(AppError::BadRequest(anyhow::anyhow!(
-            "SQL query is required and cannot be empty"
+            "SQL query cannot be empty"
         )));
     }
 
@@ -112,91 +115,70 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
 
     let result = match command {
         Some(Command::Arrow) => {
-            if let Some(sql) = params.sql {
-                let persist = params.persist.unwrap_or(false);
-                let invalidate = params.invalidate.unwrap_or(false);
-                let args = params.args.unwrap_or_default();
-                let limit = params.limit.unwrap_or(state.defaults.row_limit);
-                let prepare_sql = params.prepare_sql;
-                let buffer = retrieve(
-                    &db_state.cache,
-                    sql.clone().as_str(),
-                    &args,
-                    &Command::Arrow,
-                    persist,
-                    invalidate,
-                    || {
-                        db_state.db.get_arrow(
-                            sql,
-                            &args,
-                            prepare_sql,
-                            limit,
-                            params.extensions.as_deref(),
-                            cancel_token.clone(),
-                        )
-                    },
-                )
-                .await?;
-                Ok(QueryResponse::Arrow(buffer))
-            }
-            else {
-                Err(AppError::BadRequest(anyhow::anyhow!(
-                    "SQL query is required for Arrow command"
-                )))
-            }
+            let persist = params.persist.unwrap_or(false);
+            let invalidate = params.invalidate.unwrap_or(false);
+            let args = params.args.unwrap_or_default();
+            let limit = params.limit.unwrap_or(state.defaults.row_limit);
+            let prepare_sql = params.prepare_sql;
+            let buffer = retrieve(
+                &db_state.cache,
+                sql.as_str(),
+                &args,
+                &Command::Arrow,
+                persist,
+                invalidate,
+                || {
+                    db_state.db.get_arrow(
+                        sql.clone(),
+                        &args,
+                        prepare_sql,
+                        limit,
+                        params.extensions.as_deref(),
+                        cancel_token.clone(),
+                    )
+                },
+            )
+            .await?;
+            Ok(QueryResponse::Arrow(buffer))
         }
         Some(Command::Exec) => {
-            if let Some(sql) = params.sql.as_deref() {
-                db_state.db.execute(sql, params.extensions.as_deref()).await?;
-                Ok(QueryResponse::Empty)
-            }
-            else {
-                Err(AppError::BadRequest(anyhow::anyhow!(
-                    "SQL query is required for Exec command"
-                )))
-            }
+            db_state.db.execute(sql.as_str(), params.extensions.as_deref()).await?;
+            Ok(QueryResponse::Empty)
         }
         Some(Command::Json) => {
-            if let Some(sql) = params.sql {
-                let persist = params.persist.unwrap_or(false);
-                let invalidate = params.invalidate.unwrap_or(false);
-                let args = params.args.unwrap_or_default();
-                let limit = params.limit.unwrap_or(state.defaults.row_limit);
-                let prepare_sql = params.prepare_sql;
-                let json: Vec<u8> = retrieve(
-                    &db_state.cache,
-                    sql.clone().as_str(),
-                    &args,
-                    &Command::Json,
-                    persist,
-                    invalidate,
-                    || {
-                        db_state.db.get_json(
-                            sql,
-                            &args,
-                            prepare_sql,
-                            limit,
-                            params.extensions.as_deref(),
-                            cancel_token.clone(),
-                        )
-                    },
-                )
-                .await?;
+            let persist = params.persist.unwrap_or(false);
+            let invalidate = params.invalidate.unwrap_or(false);
+            let args = params.args.unwrap_or_default();
+            let limit = params.limit.unwrap_or(state.defaults.row_limit);
+            let prepare_sql = params.prepare_sql;
+            let json: Vec<u8> = retrieve(
+                &db_state.cache,
+                sql.as_str(),
+                &args,
+                &Command::Json,
+                persist,
+                invalidate,
+                || {
+                    db_state.db.get_json(
+                        sql.clone(),
+                        &args,
+                        prepare_sql,
+                        limit,
+                        params.extensions.as_deref(),
+                        cancel_token.clone(),
+                    )
+                },
+            )
+            .await?;
 
-                let string = if json.is_empty() {
-                    "[]".to_string()
-                }
-                else {
-                    String::from_utf8(json)?
-                };
-
-                Ok(QueryResponse::Json(string))
+            let string = if json.is_empty() {
+                "[]".to_string()
             }
             else {
-                Err(AppError::BadRequest(anyhow::anyhow!(
-                    "SQL query is required for Json command"
-                )))
-            }
+                String::from_utf8(json)?
+            };
+
+            Ok(QueryResponse::Json(string))
         }
         None => unreachable!("HOLY MOLLY, this should never happen: query type is required"),
     };
