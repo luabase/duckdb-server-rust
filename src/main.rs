@@ -241,6 +241,7 @@ async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let auth_config = if args.service_auth_enabled {
+        tracing::info!("Authentication is enabled");
         Some(create_auth_config(
             true,
             args.service_auth_token,
