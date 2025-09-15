@@ -242,6 +242,14 @@ async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     let auth_config = if args.service_auth_enabled {
         tracing::info!("Authentication is enabled");
+        tracing::debug!("Auth token provided: {:?}", args.service_auth_token.is_some());
+        
+        if args.service_auth_token.is_none() {
+            return Err(anyhow::anyhow!(
+                "Authentication is enabled but no token provided. Use --service-auth-token to specify a token."
+            ).into());
+        }
+        
         Some(create_auth_config(
             true,
             args.service_auth_token,
