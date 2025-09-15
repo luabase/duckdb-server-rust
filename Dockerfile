@@ -7,6 +7,9 @@ WORKDIR /app
 ARG GIT_HASH
 ENV GIT_HASH=$GIT_HASH
 
+ARG SERVICE_AUTH_TOKEN
+ENV SERVICE_AUTH_TOKEN=$SERVICE_AUTH_TOKEN
+
 RUN apt-get update && apt-get install -y build-essential lld clang bash protobuf-compiler cmake git wget unzip
 
 ENV CC=clang

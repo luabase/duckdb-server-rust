@@ -1,5 +1,11 @@
+availableSecrets:
+  secretManager:
+    - versionName: projects/$PROJECT_ID/secrets/DUCKDB_SERVER_SERVICE_AUTH_TOKEN/versions/latest
+      env: 'SERVICE_AUTH_TOKEN'
+
 steps:
   - name: 'gcr.io/kaniko-project/executor:latest'
+    secretEnv: ['SERVICE_AUTH_TOKEN']
     args:
       - '--dockerfile=Dockerfile'
       - '--context=.'
@@ -7,6 +13,7 @@ steps:
       - '--destination=us-central1-docker.pkg.dev/$PROJECT_ID/duckdb/duckdb-server:$SHORT_SHA'
       - '--build-arg=PROJECT_ID=$PROJECT_ID'
       - '--build-arg=GIT_HASH=$SHORT_SHA'
+      - '--build-arg=SERVICE_AUTH_TOKEN=$$SERVICE_AUTH_TOKEN'
       - '--cache=true'
       - '--cache-ttl=24h'
 timeout: '2h'
