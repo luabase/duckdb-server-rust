@@ -143,6 +143,7 @@ impl ConnectionPool {
             })?
             .allow_unsigned_extensions()?
             .enable_autoload_extension(true)?
+            .enable_object_cache(true)?
             .threads(pool_size as i64)?;
 
         let manager = DuckdbConnectionManager::file_with_flags(db_path, config)?;
