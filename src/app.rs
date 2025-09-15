@@ -16,7 +16,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use crate::auth::{AuthConfig, google_auth_middleware};
+use crate::auth::{AuthConfig, auth_middleware};
 use crate::constants::FULL_VERSION;
 use crate::interfaces::{AppError, QueryParams, QueryResponse};
 use crate::query;
@@ -216,7 +216,7 @@ pub async fn app(app_state: Arc<AppState>, timeout: u32, auth_config: Option<Aut
             .with_state(app_state)
             .layer(axum::middleware::from_fn_with_state(
                 auth_config,
-                google_auth_middleware,
+                auth_middleware,
             ))
             .layer(header_layer)
             .layer(cors)
