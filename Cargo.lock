@@ -1433,6 +1433,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sqlparser 0.58.0",
+ "subtle",
  "temp_testdir",
  "tokio",
  "tokio-stream",

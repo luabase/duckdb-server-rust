@@ -4,6 +4,7 @@ use axum::{
     middleware::Next,
     response::Response,
 };
+use subtle::ConstantTimeEq;
 
 #[derive(Debug, Clone)]
 pub struct AuthConfig {
@@ -63,7 +64,7 @@ pub async fn selective_auth_middleware(
 
 fn validate_auth_token(token: &str, config: &AuthConfig) -> bool {
     if let Some(expected_token) = &config.auth_token {
-        token == expected_token
+        token.as_bytes().ct_eq(expected_token.as_bytes()).into()
     } else {
         tracing::warn!("No authentication token configured");
         false
