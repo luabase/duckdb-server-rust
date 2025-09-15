@@ -72,18 +72,17 @@ where
 }
 
 pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryResponse, AppError> {
-    let sql = params.sql.clone().unwrap_or_default();
-    let query_id = state.start_query(params.database.clone(), sql.clone()).await;
-
-    let cancel_token = {
-        let queries = state.running_queries.lock().await;
-        queries
-            .get(&query_id)
-            .map(|q| q.cancel_token.clone())
-            .ok_or_else(|| AppError::Error(anyhow::anyhow!("Failed to get cancellation token")))?
-    };
-
     let command = &params.query_type;
+    if command.is_none() {
+        return Err(AppError::BadRequest(anyhow::anyhow!("Query type is required")));
+    }
+
+    let sql = params.sql.clone().unwrap_or_default();
+    if sql.trim().is_empty() {
+        return Err(AppError::BadRequest(anyhow::anyhow!(
+            "SQL query is required and cannot be empty"
+        )));
+    }
 
     let db_state = if let Some(dynamic_id) = &params.dynamic_id {
         state
@@ -92,6 +91,16 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
     }
     else {
         state.get_or_create_static_db_state(&params.database).await?
+    };
+
+    let query_id = state.start_query(params.database.clone(), sql.clone()).await;
+
+    let cancel_token = {
+        let queries = state.running_queries.lock().await;
+        queries
+            .get(&query_id)
+            .map(|q| q.cancel_token.clone())
+            .ok_or_else(|| AppError::Error(anyhow::anyhow!("Failed to get cancellation token")))?
     };
 
     tracing::info!(
@@ -189,22 +198,23 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
                 )))
             }
         }
-        None => Err(AppError::BadRequest(anyhow::anyhow!("Query type is required"))),
+        None => unreachable!("HOLY MOLLY, this should never happen: query type is required"),
     };
 
-    // Clean up the query from running queries
+    let final_result = match result {
+        Ok(response) => Ok(QueryResponse::QueryWithId {
+            query_id: query_id.clone(),
+            result: Box::new(response),
+        }),
+        Err(e) => Err(e),
+    };
+
     {
         let mut queries = state.running_queries.lock().await;
         queries.remove(&query_id);
     }
 
-    match result {
-        Ok(response) => Ok(QueryResponse::QueryWithId {
-            query_id,
-            result: Box::new(response),
-        }),
-        Err(e) => Err(e),
-    }
+    final_result
 }
 
 
