@@ -48,9 +48,19 @@ enum PoolStatusResult {
 }
 
 #[derive(Serialize)]
+struct QueryStatus {
+    id: String,
+    database: String,
+    sql: String,
+    started_at: String,
+}
+
+#[derive(Serialize)]
 struct StatusResponse {
     pools: Vec<PoolStatusResult>,
     total_pools: usize,
+    running_queries: Vec<QueryStatus>,
+    total_running_queries: usize,
 }
 
 #[axum::debug_handler]
@@ -107,9 +117,28 @@ async fn status_handler(State(app_state): State<Arc<AppState>>) -> Result<Json<S
         }
     }
 
+    let running_queries = app_state.get_running_queries().await;
+    let query_statuses: Vec<QueryStatus> = running_queries
+        .into_iter()
+        .map(|query| QueryStatus {
+            id: query.id,
+            database: query.database,
+            sql: query.sql,
+            started_at: query.started_at
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+                .to_string(),
+        })
+        .collect();
+
+    let total_running_queries = query_statuses.len();
+
     Ok(Json(StatusResponse {
         pools: pool_statuses,
         total_pools: states.len(),
+        running_queries: query_statuses,
+        total_running_queries,
     }))
 }
 
