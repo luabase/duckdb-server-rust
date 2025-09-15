@@ -20,7 +20,7 @@ impl Default for AuthConfig {
     }
 }
 
-pub async fn google_auth_middleware(
+pub async fn auth_middleware(
     request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
