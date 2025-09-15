@@ -56,14 +56,7 @@ impl FlightService for FlightServer {
         let args = params.args.unwrap_or_default();
         let limit = params.limit.unwrap_or(self.state.defaults.row_limit);
 
-        let query_id = self.state.start_query(params.database.clone(), sql.clone()).await;
-        let cancel_token = {
-            let queries = self.state.running_queries.lock().await;
-            queries
-                .get(&query_id)
-                .map(|q| q.cancel_token.clone())
-                .ok_or_else(|| Status::internal("Failed to get cancellation token for query"))?
-        };
+        let (query_id, cancel_token) = self.state.start_query(params.database.clone(), sql.clone()).await;
 
         let result = db_state
             .db
