@@ -164,12 +164,16 @@ fn main() {
         Command::Serve(args) => {
             let worker_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
             println!("Starting server with {} worker threads", worker_threads);
-            let _ = Builder::new_multi_thread()
+            if let Err(e) = Builder::new_multi_thread()
                 .worker_threads(worker_threads)
                 .enable_all()
                 .build()
                 .unwrap()
-                .block_on(app_main(args));
+                .block_on(app_main(args))
+            {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
         }
         Command::Version => {
             // noop
