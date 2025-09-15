@@ -58,10 +58,10 @@ impl FlightService for FlightServer {
             queries
                 .get(&query_id)
                 .map(|q| q.cancel_token.clone())
-                .unwrap_or_else(|| tokio_util::sync::CancellationToken::new())
+                .ok_or_else(|| Status::internal("Failed to get cancellation token for query"))?
         };
 
-        let batches = db_state
+        let result = db_state
             .db
             .get_record_batches(
                 sql,
@@ -71,13 +71,15 @@ impl FlightService for FlightServer {
                 params.extensions.as_deref(),
                 cancel_token,
             )
-            .await
-            .map_err(|e| Status::internal(e.to_string()))?;
+            .await;
 
+        // Always clean up the query from running_queries, regardless of success or failure
         {
             let mut queries = self.state.running_queries.lock().await;
             queries.remove(&query_id);
         }
+
+        let batches = result.map_err(|e| Status::internal(e.to_string()))?;
 
         let schema = batches
             .first()
