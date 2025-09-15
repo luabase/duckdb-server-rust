@@ -94,14 +94,6 @@ struct Args {
     #[arg(long, default_value_t = 10)]
     pool_timeout: u64,
     
-    /// Google service account email for authentication
-    #[arg(long)]
-    service_auth_email: Option<String>,
-    
-    /// Comma-separated list of allowed email addresses
-    #[arg(long)]
-    service_auth_allowed_emails: Option<String>,
-    
     /// Enable authentication
     #[arg(long)]
     service_auth_enabled: bool,
@@ -249,13 +241,7 @@ async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let auth_config = if args.service_auth_enabled {
-        let allowed_emails = args.service_auth_allowed_emails
-            .map(|emails| emails.split(',').map(|s| s.trim().to_string()).collect())
-            .unwrap_or_default();
-        
         Some(create_auth_config(
-            args.service_auth_email,
-            allowed_emails,
             true,
             args.service_auth_token,
         ))
