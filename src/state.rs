@@ -183,7 +183,7 @@ impl AppState {
         }
     }
 
-    pub async fn start_query(&self, database: String, sql: String) -> String {
+    pub async fn start_query(&self, database: String, sql: String) -> (String, CancellationToken) {
         let query_id = Uuid::new_v4().to_string();
         let cancel_token = CancellationToken::new();
 
@@ -201,7 +201,7 @@ impl AppState {
             .insert(query_id.clone(), running_query);
 
         tracing::info!("Started query {} for database {}", query_id, database);
-        query_id
+        (query_id, cancel_token)
     }
 
     pub async fn cancel_query(&self, query_id: &str) -> Result<bool, AppError> {

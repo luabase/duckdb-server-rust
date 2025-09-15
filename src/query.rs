@@ -96,15 +96,7 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
         state.get_or_create_static_db_state(&params.database).await?
     };
 
-    let query_id = state.start_query(params.database.clone(), sql.clone()).await;
-
-    let cancel_token = {
-        let queries = state.running_queries.lock().await;
-        queries
-            .get(&query_id)
-            .map(|q| q.cancel_token.clone())
-            .ok_or_else(|| AppError::Error(anyhow::anyhow!("Failed to get cancellation token")))?
-    };
+    let (query_id, cancel_token) = state.start_query(params.database.clone(), sql.clone()).await;
 
     tracing::info!(
         "Command: '{:?}', Query ID: '{}', Params: '{:?}'",
