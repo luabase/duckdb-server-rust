@@ -1,12 +1,12 @@
 use crate::{interfaces::QueryParams, state::AppState};
 use arrow_flight::{
-    encode::FlightDataEncoderBuilder, error::FlightError, flight_service_server::FlightService,
-    flight_service_server::FlightServiceServer, Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor,
-    FlightInfo, HandshakeRequest, HandshakeResponse, PollInfo, PutResult, SchemaResult, Ticket,
+    Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo, HandshakeRequest, HandshakeResponse,
+    PollInfo, PutResult, SchemaResult, Ticket, encode::FlightDataEncoderBuilder, error::FlightError,
+    flight_service_server::FlightService, flight_service_server::FlightServiceServer,
 };
-use futures::{stream::BoxStream, TryStreamExt};
+use futures::{TryStreamExt, stream::BoxStream};
 use std::{net::SocketAddr, sync::Arc};
-use tonic::{transport::Server, Request, Response, Status, Streaming};
+use tonic::{Request, Response, Status, Streaming, transport::Server};
 
 pub struct FlightServer {
     pub state: Arc<AppState>,
@@ -52,11 +52,32 @@ impl FlightService for FlightServer {
         let args = params.args.unwrap_or_default();
         let limit = params.limit.unwrap_or(self.state.defaults.row_limit);
 
+        let query_id = self.state.start_query(params.database.clone(), sql.clone()).await;
+        let cancel_token = {
+            let queries = self.state.running_queries.lock().await;
+            queries
+                .get(&query_id)
+                .map(|q| q.cancel_token.clone())
+                .unwrap_or_else(|| tokio_util::sync::CancellationToken::new())
+        };
+
         let batches = db_state
             .db
-            .get_record_batches(sql, &args, params.prepare_sql, limit, params.extensions.as_deref())
+            .get_record_batches(
+                sql,
+                &args,
+                params.prepare_sql,
+                limit,
+                params.extensions.as_deref(),
+                cancel_token,
+            )
             .await
             .map_err(|e| Status::internal(e.to_string()))?;
+
+        {
+            let mut queries = self.state.running_queries.lock().await;
+            queries.remove(&query_id);
+        }
 
         let schema = batches
             .first()

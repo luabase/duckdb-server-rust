@@ -1,26 +1,51 @@
 use anyhow::Result;
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
-use duckdb::{params_from_iter, types::ToSql, AccessMode, Config, DuckdbConnectionManager};
+use duckdb::{AccessMode, Config, DuckdbConnectionManager, params_from_iter, types::ToSql};
 
 use std::os::unix::fs::MetadataExt;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 use tracing::log::info;
 
 use crate::constants::AUTOINSTALL_QUERY;
 use crate::interfaces::{AppError, Extension, SqlValue};
 use crate::sql::{enforce_query_limit, is_writable_sql};
 
-
 #[async_trait]
 pub trait Database: Send + Sync {
     async fn execute(&self, sql: &str, extensions: Option<&[Extension]>) -> Result<()>;
-    async fn get_json(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize, extensions: Option<&[Extension]>) -> Result<Vec<u8>>;
-    async fn get_arrow(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize, extensions: Option<&[Extension]>) -> Result<Vec<u8>>;
-    async fn get_record_batches(&self, sql: String, args: &[SqlValue], prepare_sql: Option<String>, limit: usize, extensions: Option<&[Extension]>) -> Result<Vec<RecordBatch>>;
+    async fn get_json(
+        &self,
+        sql: String,
+        args: &[SqlValue],
+        prepare_sql: Option<String>,
+        limit: usize,
+        extensions: Option<&[Extension]>,
+        cancel_token: CancellationToken,
+    ) -> Result<Vec<u8>>;
+    async fn get_arrow(
+        &self,
+        sql: String,
+        args: &[SqlValue],
+        prepare_sql: Option<String>,
+        limit: usize,
+        extensions: Option<&[Extension]>,
+        cancel_token: CancellationToken,
+    ) -> Result<Vec<u8>>;
+    async fn get_record_batches(
+        &self,
+        sql: String,
+        args: &[SqlValue],
+        prepare_sql: Option<String>,
+        limit: usize,
+        extensions: Option<&[Extension]>,
+        cancel_token: CancellationToken,
+    ) -> Result<Vec<RecordBatch>>;
     fn reconnect(&self) -> Result<()>;
     fn status(&self) -> Result<PoolStatus, AppError>;
+    fn interrupt_all_connections(&self) -> Result<()>;
 }
 
 #[derive(Debug, Clone)]
@@ -40,7 +65,7 @@ pub struct ConnectionPool {
     timeout: Duration,
     access_mode: AccessMode,
     pool: parking_lot::RwLock<r2d2::Pool<DuckdbConnectionManager>>,
-    inode: parking_lot::RwLock<u64>
+    inode: parking_lot::RwLock<u64>,
 }
 
 impl ConnectionPool {
@@ -59,7 +84,7 @@ impl ConnectionPool {
             timeout,
             access_mode,
             pool: parking_lot::RwLock::new(pool),
-            inode: parking_lot::RwLock::new(inode)
+            inode: parking_lot::RwLock::new(inode),
         })
     }
 
@@ -76,7 +101,8 @@ impl ConnectionPool {
                     let err_str = e.to_string().to_lowercase();
                     if err_str.contains("timeout") {
                         AppError::Timeout
-                    } else {
+                    }
+                    else {
                         AppError::Error(anyhow::anyhow!("Pool error: {}", e))
                     }
                 });
@@ -103,7 +129,8 @@ impl ConnectionPool {
             let err_str = e.to_string().to_lowercase();
             if err_str.contains("timeout") {
                 AppError::Timeout
-            } else {
+            }
+            else {
                 AppError::Error(anyhow::anyhow!("Pool error: {}", e))
             }
         })
@@ -115,7 +142,8 @@ impl ConnectionPool {
 
         if let Some(inode_val) = new_inode {
             *self.inode.write() = inode_val;
-        } else {
+        }
+        else {
             *self.inode.write() = detected_inode;
         }
 
@@ -130,10 +158,10 @@ impl ConnectionPool {
     }
 
     fn create_pool(
-        db_path: &str, 
-        pool_size: u32, 
-        timeout: Duration, 
-        access_mode: &AccessMode
+        db_path: &str,
+        pool_size: u32,
+        timeout: Duration,
+        access_mode: &AccessMode,
     ) -> Result<r2d2::Pool<DuckdbConnectionManager>> {
         let config = Config::default()
             .access_mode(match access_mode {
@@ -163,11 +191,11 @@ impl ConnectionPool {
 impl Database for Arc<ConnectionPool> {
     async fn execute(&self, sql: &str, extensions: Option<&[Extension]>) -> Result<()> {
         let conn = self.get().map_err(|e| anyhow::anyhow!("{}", e))?;
-        
+
         if let Some(exts) = extensions {
             self.load_extensions(&conn, exts)?;
         }
-        
+
         conn.execute_batch(sql)?;
 
         if is_writable_sql(sql) {
@@ -177,12 +205,14 @@ impl Database for Arc<ConnectionPool> {
         Ok(())
     }
 
-    async fn get_json(&self, 
-        sql: String, 
-        args: &[SqlValue], 
-        prepare_sql: Option<String>, 
-        limit: usize, 
-        extensions: Option<&[Extension]>
+    async fn get_json(
+        &self,
+        sql: String,
+        args: &[SqlValue],
+        prepare_sql: Option<String>,
+        limit: usize,
+        extensions: Option<&[Extension]>,
+        cancel_token: CancellationToken,
     ) -> Result<Vec<u8>> {
         let sql_owned = sql.clone();
         let prepare_sql_owned = prepare_sql.clone();
@@ -191,46 +221,56 @@ impl Database for Arc<ConnectionPool> {
         let pool = Arc::clone(self);
         let extensions_owned = extensions.map(|exts| exts.to_vec());
 
-        let result = tokio::task::spawn_blocking({
-            move || -> Result<Vec<u8>> {
-                let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
-                
-                if let Some(exts) = &extensions_owned {
-                    pool.load_extensions(&conn, exts)?;
-                }
+        let result = tokio::select! {
+            result = tokio::task::spawn_blocking({
+                let cancel_token = cancel_token.clone();
+                move || -> Result<Vec<u8>> {
+                    let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
 
-                if let Some(prepare_sql) = prepare_sql_owned {
-                    conn.execute_batch(&prepare_sql)?;
-                }
+                    if let Some(exts) = &extensions_owned {
+                        pool.load_extensions(&conn, exts)?;
+                    }
 
-                let mut stmt = conn.prepare(&effective_sql)?;
-                let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
-                let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
+                    if let Some(prepare_sql) = prepare_sql_owned {
+                        conn.execute_batch(&prepare_sql)?;
+                    }
 
-                let buf = Vec::new();
-                let mut writer = arrow_json::ArrayWriter::new(buf);
-                for batch in arrow {
-                    writer.write(&batch)?;
+                    let mut stmt = conn.prepare(&effective_sql)?;
+                    let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
+                    let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
+
+                    let buf = Vec::new();
+                    let mut writer = arrow_json::ArrayWriter::new(buf);
+                    for batch in arrow {
+                        if cancel_token.is_cancelled() {
+                            return Err(anyhow::anyhow!("Query cancelled"));
+                        }
+                        writer.write(&batch)?;
+                    }
+                    writer.finish()?;
+                    Ok(writer.into_inner())
                 }
-                writer.finish()?;
-                Ok(writer.into_inner())
+            }) => result.map_err(|e| anyhow::anyhow!("Task error: {}", e))?,
+            _ = cancel_token.cancelled() => {
+                return Err(anyhow::anyhow!("Query cancelled"));
             }
-        })
-        .await??;
+        };
 
         if is_writable_sql(&sql_owned) {
             self.reset_pool(None)?;
         }
 
-        Ok(result)
+        result
     }
 
-    async fn get_arrow(&self, 
-        sql: String, 
-        args: &[SqlValue], 
-        prepare_sql: Option<String>, 
-        limit: usize, 
-        extensions: Option<&[Extension]>
+    async fn get_arrow(
+        &self,
+        sql: String,
+        args: &[SqlValue],
+        prepare_sql: Option<String>,
+        limit: usize,
+        extensions: Option<&[Extension]>,
+        cancel_token: CancellationToken,
     ) -> Result<Vec<u8>> {
         let sql_owned = sql.clone();
         let prepare_sql_owned = prepare_sql.clone();
@@ -239,48 +279,57 @@ impl Database for Arc<ConnectionPool> {
         let pool = Arc::clone(self);
         let extensions_owned = extensions.map(|exts| exts.to_vec());
 
-        let result = tokio::task::spawn_blocking({
-            move || -> Result<Vec<u8>> {
-                let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
-                
-                if let Some(exts) = &extensions_owned {
-                    pool.load_extensions(&conn, exts)?;
-                }
+        let result = tokio::select! {
+            result = tokio::task::spawn_blocking({
+                let cancel_token = cancel_token.clone();
+                move || -> Result<Vec<u8>> {
+                    let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
 
-                if let Some(prepare_sql) = prepare_sql_owned {
-                    conn.execute_batch(&prepare_sql)?;
-                }
+                    if let Some(exts) = &extensions_owned {
+                        pool.load_extensions(&conn, exts)?;
+                    }
 
-                let mut stmt = conn.prepare(&effective_sql)?;
-                let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
-                let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
+                    if let Some(prepare_sql) = prepare_sql_owned {
+                        conn.execute_batch(&prepare_sql)?;
+                    }
 
-                let schema = arrow.get_schema();
-                let mut buffer: Vec<u8> = Vec::new();
-                let mut writer = arrow_ipc::writer::FileWriter::try_new(&mut buffer, schema.as_ref())?;
-                for batch in arrow {
-                    writer.write(&batch)?;
+                    let mut stmt = conn.prepare(&effective_sql)?;
+                    let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
+                    let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
+
+                    let schema = arrow.get_schema();
+                    let mut buffer: Vec<u8> = Vec::new();
+                    let mut writer = arrow_ipc::writer::FileWriter::try_new(&mut buffer, schema.as_ref())?;
+                    for batch in arrow {
+                        if cancel_token.is_cancelled() {
+                            return Err(anyhow::anyhow!("Query cancelled"));
+                        }
+                        writer.write(&batch)?;
+                    }
+                    writer.finish()?;
+                    Ok(buffer)
                 }
-                writer.finish()?;
-                Ok(buffer)
+            }) => result.map_err(|e| anyhow::anyhow!("Task error: {}", e))?,
+            _ = cancel_token.cancelled() => {
+                return Err(anyhow::anyhow!("Query cancelled"));
             }
-        })
-        .await??;
+        };
 
         if is_writable_sql(&sql_owned) {
             self.reset_pool(None)?;
         }
 
-        Ok(result)
+        result
     }
 
     async fn get_record_batches(
-        &self, 
-        sql: String, 
-        args: &[SqlValue], 
-        prepare_sql: Option<String>, 
-        limit: usize, 
-        extensions: Option<&[Extension]>
+        &self,
+        sql: String,
+        args: &[SqlValue],
+        prepare_sql: Option<String>,
+        limit: usize,
+        extensions: Option<&[Extension]>,
+        cancel_token: CancellationToken,
     ) -> Result<Vec<RecordBatch>> {
         let sql_owned = sql.clone();
         let effective_sql = enforce_query_limit(&sql_owned, limit)?;
@@ -289,31 +338,44 @@ impl Database for Arc<ConnectionPool> {
         let prepare_sql_owned = prepare_sql.clone();
         let extensions_owned = extensions.map(|exts| exts.to_vec());
 
-        let result = tokio::task::spawn_blocking({
-            move || -> Result<Vec<RecordBatch>> {
-                let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
-                
-                if let Some(exts) = &extensions_owned {
-                    pool.load_extensions(&conn, exts)?;
-                }
+        let result = tokio::select! {
+            result = tokio::task::spawn_blocking({
+                let cancel_token = cancel_token.clone();
+                move || -> Result<Vec<RecordBatch>> {
+                    let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
 
-                if let Some(prepare_sql) = prepare_sql_owned {
-                    conn.execute_batch(&prepare_sql)?;
-                }
+                    if let Some(exts) = &extensions_owned {
+                        pool.load_extensions(&conn, exts)?;
+                    }
 
-                let mut stmt = conn.prepare(&effective_sql)?;
-                let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
-                let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
-                Ok(arrow.collect())
+                    if let Some(prepare_sql) = prepare_sql_owned {
+                        conn.execute_batch(&prepare_sql)?;
+                    }
+
+                    let mut stmt = conn.prepare(&effective_sql)?;
+                    let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
+                    let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
+
+                    let mut batches = Vec::new();
+                    for batch in arrow {
+                        if cancel_token.is_cancelled() {
+                            return Err(anyhow::anyhow!("Query cancelled"));
+                        }
+                        batches.push(batch);
+                    }
+                    Ok(batches)
+                }
+            }) => result.map_err(|e| anyhow::anyhow!("Task error: {}", e))?,
+            _ = cancel_token.cancelled() => {
+                return Err(anyhow::anyhow!("Query cancelled"));
             }
-        })
-        .await??;
+        };
 
         if is_writable_sql(&sql_owned) {
             self.reset_pool(None)?;
         }
 
-        Ok(result)
+        result
     }
 
     fn reconnect(&self) -> Result<()> {
@@ -334,6 +396,14 @@ impl Database for Arc<ConnectionPool> {
             timeout: self.timeout,
         })
     }
+
+    fn interrupt_all_connections(&self) -> Result<()> {
+        info!("Interrupting all connections in pool: {}", self.db_path);
+
+        self.reset_pool(None)?;
+
+        Ok(())
+    }
 }
 
 impl ConnectionPool {
@@ -342,28 +412,29 @@ impl ConnectionPool {
             info!("No extensions to load");
             return Ok(());
         }
-        
+
         info!(
-            "Loading {} extensions: {:?}", 
-            extensions.len(), 
+            "Loading {} extensions: {:?}",
+            extensions.len(),
             extensions.iter().map(|e| &e.name).collect::<Vec<_>>()
         );
-        
+
         let mut commands = Vec::new();
         for ext in extensions {
             let install_sql = if let Some(source) = &ext.source {
                 info!("Installing extension {} from source {}", ext.name, source);
                 format!("INSTALL {} FROM {}", ext.name, source)
-            } else {
+            }
+            else {
                 info!("Installing extension {}", ext.name);
                 format!("INSTALL {}", ext.name)
             };
             commands.push(install_sql);
-            
+
             info!("Loading extension {}", ext.name);
             commands.push(format!("LOAD {}", ext.name));
         }
-        
+
         if !commands.is_empty() {
             let batch = commands.join(";\n");
             conn.execute_batch(&batch)?;

@@ -5,14 +5,26 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 use crate::db::ConnectionPool;
 use crate::interfaces::{AppError, DbDefaults, DbPath, DbState};
+
+#[derive(Clone)]
+pub struct RunningQuery {
+    pub id: String,
+    pub cancel_token: CancellationToken,
+    pub database: String,
+    pub sql: String,
+    pub started_at: std::time::SystemTime,
+}
 
 pub struct AppState {
     pub defaults: DbDefaults,
     pub paths: HashMap<String, DbPath>,
     pub states: Mutex<HashMap<String, Arc<DbState>>>,
+    pub running_queries: Mutex<HashMap<String, RunningQuery>>,
 }
 
 impl AppState {
@@ -63,10 +75,10 @@ impl AppState {
         let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
 
         let db = ConnectionPool::new(
-            path.to_str().unwrap(), 
-            self.defaults.connection_pool_size, 
-            Duration::from_secs(self.defaults.pool_timeout), 
-            access_mode
+            path.to_str().unwrap(),
+            self.defaults.connection_pool_size,
+            Duration::from_secs(self.defaults.pool_timeout),
+            access_mode,
         )?;
 
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
@@ -117,10 +129,10 @@ impl AppState {
 
         let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
         let db = ConnectionPool::new(
-            &db_path.path, 
-            effective_pool_size, 
-            Duration::from_secs(self.defaults.pool_timeout), 
-            access_mode
+            &db_path.path,
+            effective_pool_size,
+            Duration::from_secs(self.defaults.pool_timeout),
+            access_mode,
         )?;
 
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
@@ -169,5 +181,43 @@ impl AppState {
             "readonly" => AccessMode::ReadOnly,
             _ => AccessMode::Automatic,
         }
+    }
+
+    pub async fn start_query(&self, database: String, sql: String) -> String {
+        let query_id = Uuid::new_v4().to_string();
+        let cancel_token = CancellationToken::new();
+
+        let running_query = RunningQuery {
+            id: query_id.clone(),
+            cancel_token: cancel_token.clone(),
+            database: database.clone(),
+            sql: sql.clone(),
+            started_at: std::time::SystemTime::now(),
+        };
+
+        self.running_queries
+            .lock()
+            .await
+            .insert(query_id.clone(), running_query);
+
+        tracing::info!("Started query {} for database {}", query_id, database);
+        query_id
+    }
+
+    pub async fn cancel_query(&self, query_id: &str) -> Result<bool, AppError> {
+        let mut queries = self.running_queries.lock().await;
+
+        if let Some(query) = queries.remove(query_id) {
+            query.cancel_token.cancel();
+            tracing::info!("Cancelled query {} for database {}", query_id, query.database);
+            Ok(true)
+        }
+        else {
+            Ok(false)
+        }
+    }
+
+    pub async fn get_running_queries(&self) -> Vec<RunningQuery> {
+        self.running_queries.lock().await.values().cloned().collect()
     }
 }

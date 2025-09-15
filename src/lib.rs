@@ -11,7 +11,7 @@ mod state;
 pub use app::app;
 pub use cache::{get_key, retrieve};
 pub use db::{ConnectionPool, Database};
-pub use flight::{serve, FlightServer};
+pub use flight::{FlightServer, serve};
 pub use interfaces::{AppError, Command, DbState, QueryParams, QueryResponse};
 pub use query::handle;
 pub use state::AppState;
