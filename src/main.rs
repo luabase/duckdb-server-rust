@@ -12,11 +12,13 @@ use std::{
 use tokio::{net, runtime::Builder, sync::Mutex};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use crate::auth::create_auth_config;
 use crate::constants::*;
 use crate::interfaces::{DbDefaults, DbPath};
 use crate::state::AppState;
 
 mod app;
+mod auth;
 mod cache;
 mod constants;
 mod db;
@@ -91,6 +93,22 @@ struct Args {
     /// Connection pool timeout in seconds
     #[arg(long, default_value_t = 10)]
     pool_timeout: u64,
+    
+    /// Google service account email for authentication
+    #[arg(long)]
+    service_auth_email: Option<String>,
+    
+    /// Comma-separated list of allowed email addresses
+    #[arg(long)]
+    service_auth_allowed_emails: Option<String>,
+    
+    /// Enable authentication
+    #[arg(long)]
+    service_auth_enabled: bool,
+    
+    /// Authentication token
+    #[arg(long)]
+    service_auth_token: Option<String>,
 }
 
 fn parse_db(s: &str) -> Result<(String, String), String> {
@@ -230,7 +248,22 @@ async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let app = app::app(app_state.clone(), args.timeout).await?;
+    let auth_config = if args.service_auth_enabled {
+        let allowed_emails = args.service_auth_allowed_emails
+            .map(|emails| emails.split(',').map(|s| s.trim().to_string()).collect())
+            .unwrap_or_default();
+        
+        Some(create_auth_config(
+            args.service_auth_email,
+            allowed_emails,
+            true,
+            args.service_auth_token,
+        ))
+    } else {
+        None
+    };
+
+    let app = app::app(app_state.clone(), args.timeout, auth_config).await?;
 
     let addr = SocketAddr::new(args.address, args.http_port);
     let mut listenfd = ListenFd::from_env();
@@ -274,7 +307,7 @@ async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             let listener = net::TcpListener::from_std(listener)?;
 
             // Run Axum directly without tokio::spawn
-            axum::serve(listener, app).await?;
+            axum::serve(listener, app.into_make_service()).await?;
         }
         Ok(config) => {
             tracing::info!(
