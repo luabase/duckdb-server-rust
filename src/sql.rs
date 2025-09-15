@@ -14,12 +14,15 @@ pub fn enforce_query_limit(sql: &str, limit: usize) -> anyhow::Result<String> {
                     if query.limit_clause.is_none() {
                         let original_query = query.to_string();
                         query.limit_clause = Some(LimitClause::LimitOffset {
-                                limit: Some(Expr::value(Value::Number(limit.to_string(), false))),
-                                offset: None,
-                                limit_by: vec![]
-                            });
+                            limit: Some(Expr::value(Value::Number(limit.to_string(), false))),
+                            offset: None,
+                            limit_by: vec![],
+                        });
                         let rewritten_query = query.to_string();
-                        info!("Enforced query limit: original='{}', rewritten='{}'", original_query, rewritten_query);
+                        info!(
+                            "Enforced query limit: original='{}', rewritten='{}'",
+                            original_query, rewritten_query
+                        );
                     }
                 }
             }

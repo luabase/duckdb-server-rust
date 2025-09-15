@@ -57,7 +57,6 @@ pub enum SqlValue {
 }
 
 impl SqlValue {
-    // Converts SqlValue to a type that implements `ToSql`
     pub fn as_tosql(&self) -> Box<dyn ToSql> {
         match self {
             SqlValue::Int(v) => Box::new(*v),
@@ -84,12 +83,32 @@ pub struct QueryParams {
     pub name: Option<String>,
     pub limit: Option<usize>,
     pub extensions: Option<Vec<Extension>>,
+    pub query_id: Option<String>,
+    pub cancellable: Option<bool>,
 }
 
 pub enum QueryResponse {
     Arrow(Vec<u8>),
     Json(String),
     Empty,
+    QueryCancelled {
+        query_id: String,
+    },
+    RunningQueries {
+        queries: Vec<QueryInfo>,
+    },
+    QueryWithId {
+        query_id: String,
+        result: Box<QueryResponse>,
+    },
+}
+
+#[derive(Serialize, Clone)]
+pub struct QueryInfo {
+    pub id: String,
+    pub database: String,
+    pub sql: String,
+    pub started_at: String,
 }
 
 impl IntoResponse for QueryResponse {
@@ -105,6 +124,37 @@ impl IntoResponse for QueryResponse {
                 (StatusCode::OK, [("Content-Type", "application/json")], value).into_response()
             }
             QueryResponse::Empty => StatusCode::OK.into_response(),
+            QueryResponse::QueryCancelled { query_id } => {
+                let response = serde_json::json!({
+                    "status": "cancelled",
+                    "query_id": query_id
+                });
+                (
+                    StatusCode::OK,
+                    [("Content-Type", "application/json")],
+                    response.to_string(),
+                )
+                    .into_response()
+            }
+            QueryResponse::RunningQueries { queries } => {
+                let response = serde_json::json!({
+                    "status": "running_queries",
+                    "queries": queries
+                });
+                (
+                    StatusCode::OK,
+                    [("Content-Type", "application/json")],
+                    response.to_string(),
+                )
+                    .into_response()
+            }
+            QueryResponse::QueryWithId { query_id, result } => {
+                let mut response = (*result).into_response();
+                if let Ok(header_value) = query_id.parse() {
+                    response.headers_mut().insert("X-Query-ID", header_value);
+                }
+                response
+            }
         }
     }
 }
@@ -127,10 +177,7 @@ impl IntoResponse for AppError {
                 )
                     .into_response()
             }
-            AppError::BadRequest(error) => (
-                StatusCode::BAD_REQUEST, 
-                format!("Bad request: {error}")
-            ).into_response(),
+            AppError::BadRequest(error) => (StatusCode::BAD_REQUEST, format!("Bad request: {error}")).into_response(),
             AppError::Timeout => (StatusCode::REQUEST_TIMEOUT).into_response(),
         }
     }

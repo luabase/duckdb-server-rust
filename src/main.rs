@@ -33,9 +33,9 @@ unsafe extern "C" {
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 enum Command {
-    #[command(about = "Run the DuckDB server")] 
+    #[command(about = "Run the DuckDB server")]
     Serve(Args),
-    #[command(about = "Print the DuckDB library version")] 
+    #[command(about = "Print the DuckDB library version")]
     Version,
 }
 
@@ -217,6 +217,7 @@ async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         defaults: db_defaults,
         paths: db_paths.into_iter().map(|db| (db.id.clone(), db)).collect(),
         states: Mutex::new(HashMap::new()),
+        running_queries: Mutex::new(HashMap::new()),
     });
 
     tracing::info!("Loaded paths: {:?}", app_state.paths);

@@ -1,10 +1,10 @@
 use anyhow::Result;
 use axum::{
-    extract::{Query, State},
-    http::{header::HeaderName, HeaderValue, Method},
-    response::Json,
-    routing::get,
     Router,
+    extract::{Path, Query, State},
+    http::{HeaderValue, Method, header::HeaderName},
+    response::Json,
+    routing::{get, post},
 };
 use std::{sync::Arc, time::Duration};
 use tower::ServiceBuilder;
@@ -80,9 +80,7 @@ async fn handle_post(
 }
 
 #[axum::debug_handler]
-async fn status_handler(
-    State(app_state): State<Arc<AppState>>,
-) -> Result<Json<StatusResponse>, AppError> {
+async fn status_handler(State(app_state): State<Arc<AppState>>) -> Result<Json<StatusResponse>, AppError> {
     let states = app_state.states.lock().await;
     let mut pool_statuses = Vec::new();
 
@@ -123,6 +121,50 @@ async fn version_handler() -> &'static str {
     &FULL_VERSION
 }
 
+#[axum::debug_handler]
+async fn handle_cancellable_get(
+    State(app_state): State<Arc<AppState>>,
+    Query(params): Query<QueryParams>,
+) -> Result<QueryResponse, AppError> {
+    let res = query::with_db_retry(&app_state, params, |state, params| {
+        Box::pin(query::handle_cancellable_query(state, params))
+    })
+    .await?;
+
+    Ok(res)
+}
+
+#[axum::debug_handler]
+async fn handle_cancellable_post(
+    State(app_state): State<Arc<AppState>>,
+    Json(params): Json<QueryParams>,
+) -> Result<QueryResponse, AppError> {
+    let res = query::with_db_retry(&app_state, params, |state, params| {
+        Box::pin(query::handle_cancellable_query(state, params))
+    })
+    .await?;
+
+    Ok(res)
+}
+
+#[axum::debug_handler]
+async fn cancel_query_handler(
+    State(app_state): State<Arc<AppState>>,
+    Path(query_id): Path<String>,
+) -> Result<QueryResponse, AppError> {
+    query::cancel_query(&app_state, query_id).await
+}
+
+#[axum::debug_handler]
+async fn list_queries_handler(State(app_state): State<Arc<AppState>>) -> Result<QueryResponse, AppError> {
+    query::list_running_queries(&app_state).await
+}
+
+#[axum::debug_handler]
+async fn interrupt_all_connections_handler(State(app_state): State<Arc<AppState>>) -> Result<QueryResponse, AppError> {
+    query::interrupt_all_connections(&app_state).await
+}
+
 pub async fn app(app_state: Arc<AppState>, timeout: u32) -> Result<Router> {
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -131,9 +173,19 @@ pub async fn app(app_state: Arc<AppState>, timeout: u32) -> Result<Router> {
         .max_age(Duration::from_secs(86400));
 
     let hostname = hostname::get()?.into_string().unwrap_or_default();
-    let hostname = if hostname.is_empty() { "unknown".into() } else { hostname };
+    let hostname = if hostname.is_empty() {
+        "unknown".into()
+    }
+    else {
+        hostname
+    };
 
-    let full_version = if FULL_VERSION.is_empty() { "unknown" } else { &FULL_VERSION };
+    let full_version = if FULL_VERSION.is_empty() {
+        "unknown"
+    }
+    else {
+        &FULL_VERSION
+    };
 
     let header_layer = ServiceBuilder::new()
         .layer(SetResponseHeaderLayer::if_not_present(
@@ -149,6 +201,17 @@ pub async fn app(app_state: Arc<AppState>, timeout: u32) -> Result<Router> {
         .route("/", get(readiness_probe))
         .route("/query", get(handle_get).post(handle_post))
         .route("/query/", get(handle_get).post(handle_post))
+        .route(
+            "/query/cancellable",
+            get(handle_cancellable_get).post(handle_cancellable_post),
+        )
+        .route(
+            "/query/cancellable/",
+            get(handle_cancellable_get).post(handle_cancellable_post),
+        )
+        .route("/query/cancel/:query_id", post(cancel_query_handler))
+        .route("/queries", get(list_queries_handler))
+        .route("/interrupt-all", post(interrupt_all_connections_handler))
         .route("/healthz", get(readiness_probe))
         .route("/version", get(version_handler))
         .route("/status", get(status_handler))
