@@ -211,7 +211,7 @@ pub async fn app(app_state: Arc<AppState>, timeout: u32, auth_config: Option<Aut
             .route("/version", get(version_handler))
             .route("/query/{query_id}", delete(cancel_query_handler))
             .route("/queries", get(list_queries_handler))
-            .route("/interrupt-all", post(interrupt_all_connections_handler))
+            .route("/killall", delete(interrupt_all_connections_handler))
             .route("/status", get(status_handler))
             .with_state(app_state)
             .layer(axum::middleware::from_fn_with_state(
@@ -230,7 +230,7 @@ pub async fn app(app_state: Arc<AppState>, timeout: u32, auth_config: Option<Aut
             .route("/query/", get(handle_get).post(handle_post))
             .route("/query/{query_id}", delete(cancel_query_handler))
             .route("/queries", get(list_queries_handler))
-            .route("/interrupt-all", post(interrupt_all_connections_handler))
+            .route("/killall", delete(interrupt_all_connections_handler))
             .route("/healthz", get(readiness_probe))
             .route("/version", get(version_handler))
             .route("/status", get(status_handler))
