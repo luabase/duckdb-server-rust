@@ -45,7 +45,7 @@ pub trait Database: Send + Sync {
     ) -> Result<Vec<RecordBatch>>;
     fn reconnect(&self) -> Result<()>;
     fn status(&self) -> Result<PoolStatus, AppError>;
-    fn interrupt_all_connections(&self) -> Result<()>;
+    fn kill_all_connections(&self) -> Result<()>;
 }
 
 #[derive(Debug, Clone)]
@@ -397,7 +397,7 @@ impl Database for Arc<ConnectionPool> {
         })
     }
 
-    fn interrupt_all_connections(&self) -> Result<()> {
+    fn kill_all_connections(&self) -> Result<()> {
         info!("Interrupting all connections in pool: {}", self.db_path);
 
         self.reset_pool(None)?;
