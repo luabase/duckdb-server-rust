@@ -247,13 +247,7 @@ async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let auth_config = if args.service_auth_enabled {
         tracing::info!("Authentication is enabled");
         
-        let token = if let Some(token) = args.service_auth_token {
-            Some(token)
-        } else if let Ok(env_token) = std::env::var("SERVICE_AUTH_TOKEN") {
-            Some(env_token)
-        } else {
-            None
-        };
+        let token = args.service_auth_token.or_else(|| std::env::var("SERVICE_AUTH_TOKEN").ok());
         
         if token.is_none() {
             return Err(anyhow::anyhow!(
