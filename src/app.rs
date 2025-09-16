@@ -4,7 +4,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{HeaderValue, Method, header::HeaderName},
     response::Json,
-    routing::{delete, get, post},
+    routing::{delete, get},
 };
 use std::{sync::Arc, time::Duration};
 use tower::ServiceBuilder;
@@ -166,14 +166,22 @@ async fn list_queries_handler(State(app_state): State<Arc<AppState>>) -> Result<
 }
 
 #[axum::debug_handler]
-async fn interrupt_all_connections_handler(State(app_state): State<Arc<AppState>>) -> Result<QueryResponse, AppError> {
-    query::interrupt_all_connections(&app_state).await
+async fn kill_all_connections_handler(State(app_state): State<Arc<AppState>>) -> Result<QueryResponse, AppError> {
+    query::kill_all_connections(&app_state).await
+}
+
+#[axum::debug_handler]
+async fn killall_queries_for_database_handler(
+    State(app_state): State<Arc<AppState>>,
+    Path(database): Path<String>,
+) -> Result<QueryResponse, AppError> {
+    query::killall_queries_for_database(&app_state, database).await
 }
 
 pub async fn app(app_state: Arc<AppState>, timeout: u32, auth_config: Option<AuthConfig>) -> Result<Router> {
     let cors = CorsLayer::new()
         .allow_origin(Any)
-        .allow_methods([Method::OPTIONS, Method::POST, Method::GET])
+        .allow_methods([Method::OPTIONS, Method::POST, Method::GET, Method::DELETE])
         .allow_headers(Any)
         .max_age(Duration::from_secs(86400));
 
@@ -211,7 +219,8 @@ pub async fn app(app_state: Arc<AppState>, timeout: u32, auth_config: Option<Aut
             .route("/version", get(version_handler))
             .route("/query/{query_id}", delete(cancel_query_handler))
             .route("/queries", get(list_queries_handler))
-            .route("/queries/killall", delete(interrupt_all_connections_handler))
+            .route("/queries/killall", delete(kill_all_connections_handler))
+            .route("/queries/{database}/killall", delete(killall_queries_for_database_handler))
             .route("/status", get(status_handler))
             .with_state(app_state)
             .layer(axum::middleware::from_fn_with_state(
@@ -230,7 +239,8 @@ pub async fn app(app_state: Arc<AppState>, timeout: u32, auth_config: Option<Aut
             .route("/query/", get(handle_get).post(handle_post))
             .route("/query/{query_id}", delete(cancel_query_handler))
             .route("/queries", get(list_queries_handler))
-            .route("/queries/killall", delete(interrupt_all_connections_handler))
+            .route("/queries/killall", delete(kill_all_connections_handler))
+            .route("/queries/{database}/killall", delete(killall_queries_for_database_handler))
             .route("/healthz", get(readiness_probe))
             .route("/version", get(version_handler))
             .route("/status", get(status_handler))

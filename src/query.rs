@@ -224,7 +224,7 @@ pub async fn list_running_queries(state: &AppState) -> Result<QueryResponse, App
     Ok(QueryResponse::RunningQueries { queries: query_infos })
 }
 
-pub async fn interrupt_all_connections(state: &AppState) -> Result<QueryResponse, AppError> {
+pub async fn kill_all_connections(state: &AppState) -> Result<QueryResponse, AppError> {
     let running_queries = state.get_running_queries().await;
     let mut cancelled_count = 0;
 
@@ -236,7 +236,7 @@ pub async fn interrupt_all_connections(state: &AppState) -> Result<QueryResponse
 
     let states = state.states.lock().await;
     for (_, db_state) in states.iter() {
-        if let Err(e) = db_state.db.interrupt_all_connections() {
+        if let Err(e) = db_state.db.kill_all_connections() {
             tracing::warn!("Failed to interrupt connections for database: {}", e);
         }
     }
@@ -245,6 +245,35 @@ pub async fn interrupt_all_connections(state: &AppState) -> Result<QueryResponse
         "status": "interrupted",
         "cancelled_queries": cancelled_count,
         "message": "All connections have been interrupted"
+    });
+
+    Ok(QueryResponse::Json(response.to_string()))
+}
+
+pub async fn killall_queries_for_database(state: &AppState, database: String) -> Result<QueryResponse, AppError> {
+    let running_queries = state.get_running_queries().await;
+    let mut cancelled_count = 0;
+
+    for query in running_queries {
+        if query.database == database {
+            if state.cancel_query(&query.id).await? {
+                cancelled_count += 1;
+            }
+        }
+    }
+
+    let states = state.states.lock().await;
+    if let Some(db_state) = states.get(&database) {
+        if let Err(e) = db_state.db.kill_all_connections() {
+            tracing::warn!("Failed to interrupt connections for database {}: {}", database, e);
+        }
+    }
+
+    let response = serde_json::json!({
+        "status": "interrupted",
+        "database": database,
+        "cancelled_queries": cancelled_count,
+        "message": format!("All queries for database '{}' have been interrupted", database)
     });
 
     Ok(QueryResponse::Json(response.to_string()))
