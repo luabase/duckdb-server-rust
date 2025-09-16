@@ -247,15 +247,24 @@ async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let auth_config = if args.service_auth_enabled {
         tracing::info!("Authentication is enabled");
         
-        if args.service_auth_token.is_none() {
+        let token = if let Some(token) = args.service_auth_token {
+            Some(token)
+        } else if let Ok(env_token) = std::env::var("SERVICE_AUTH_TOKEN") {
+            Some(env_token)
+        } else {
+            None
+        };
+        
+        if token.is_none() {
             return Err(anyhow::anyhow!(
-                "Authentication is enabled but no token provided. Use --service-auth-token to specify a token."
+                "Authentication is enabled but no token provided. Use --service-auth-token or set \
+                SERVICE_AUTH_TOKEN environment variable."
             ).into());
         }
         
         Some(create_auth_config(
             true,
-            args.service_auth_token,
+            token,
         ))
     } else {
         None
