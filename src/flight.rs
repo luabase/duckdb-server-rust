@@ -156,7 +156,7 @@ impl FlightService for FlightServer {
 pub async fn serve(addr: SocketAddr, state: Arc<AppState>) -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Starting Arrow Flight Server at {}", addr);
 
-    let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
+    let (health_reporter, health_service) = tonic_health::server::health_reporter();
     health_reporter.set_serving::<FlightServiceServer<FlightServer>>().await;
 
     Server::builder()
