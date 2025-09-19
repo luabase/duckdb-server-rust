@@ -8,6 +8,7 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use crate::constants::MEMORY_DB_PATH;
 use crate::db::ConnectionPool;
 use crate::interfaces::{AppError, DbDefaults, DbPath, DbState};
 
@@ -111,7 +112,7 @@ impl AppState {
             )));
         }
 
-        let effective_pool_size = if db_path.path == ":memory:" {
+        let effective_pool_size = if db_path.path == MEMORY_DB_PATH {
             1
         }
         else {
@@ -222,7 +223,7 @@ impl AppState {
     }
 
     pub async fn create_database_if_not_exists(&self, dynamic_id: &str, database: &str) -> Result<(), AppError> {
-        if database.trim() == ":memory:" {
+        if database.trim() == MEMORY_DB_PATH {
             return Ok(());
         }
 
