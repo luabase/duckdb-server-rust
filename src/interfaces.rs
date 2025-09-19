@@ -84,6 +84,7 @@ pub struct QueryParams {
     pub limit: Option<usize>,
     pub extensions: Option<Vec<Extension>>,
     pub query_id: Option<String>,
+    pub create: Option<bool>,
 }
 
 pub enum QueryResponse {

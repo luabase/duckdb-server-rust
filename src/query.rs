@@ -77,6 +77,14 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
         return Err(AppError::BadRequest(anyhow::anyhow!("Query type is required")));
     }
 
+    if let Some(dynamic_id) = params.dynamic_id.as_deref() && params.create.unwrap_or(false) {
+        state.create_database_if_not_exists(dynamic_id, &params.database).await?;
+
+        if params.sql.is_none() || params.sql.as_ref().unwrap().trim().is_empty() {
+            return Ok(QueryResponse::Empty);
+        }
+    }
+
     let sql = params.sql.clone().ok_or_else(|| {
         AppError::BadRequest(anyhow::anyhow!("SQL query is required"))
     })?;
