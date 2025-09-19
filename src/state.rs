@@ -238,7 +238,7 @@ impl AppState {
         };
 
         let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
-        
+
         if access_mode == duckdb::AccessMode::ReadOnly {
             return Err(AppError::BadRequest(anyhow::anyhow!(
                 "Cannot create database in readonly mode"
@@ -251,7 +251,7 @@ impl AppState {
                     AppError::Error(anyhow::anyhow!("Failed to create directory {}: {}", parent.display(), e))
                 })?;
             }
-            
+
             let conn = duckdb::Connection::open(&path).map_err(|e| {
                 AppError::Error(anyhow::anyhow!("Failed to create database {}: {}", path.display(), e))
             })?;
