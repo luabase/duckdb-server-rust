@@ -220,4 +220,48 @@ impl AppState {
     pub async fn get_running_queries(&self) -> Vec<RunningQuery> {
         self.running_queries.lock().await.values().cloned().collect()
     }
+
+    pub async fn create_database_if_not_exists(&self, dynamic_id: &str, database: &str) -> Result<(), AppError> {
+        if database.trim() == ":memory:" {
+            return Ok(());
+        }
+
+        let path = if let Some(db_path) = self.paths.get(dynamic_id) {
+            if db_path.is_dynamic {
+                PathBuf::from(&db_path.path).join(database)
+            } else {
+                return Err(AppError::BadRequest(anyhow::anyhow!("Database ID {} is a static lookup", dynamic_id)));
+            }
+        } else {
+            return Err(AppError::BadRequest(anyhow::anyhow!("Database ID {} not found", dynamic_id)));
+        };
+
+        let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
+        
+        if access_mode == duckdb::AccessMode::ReadOnly {
+            return Err(AppError::BadRequest(anyhow::anyhow!(
+                "Cannot create database in readonly mode"
+            )));
+        }
+        
+        if !path.exists() {
+            if let Some(parent) = path.parent() {
+                tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                    AppError::Error(anyhow::anyhow!("Failed to create directory {}: {}", parent.display(), e))
+                })?;
+            }
+            
+            let conn = duckdb::Connection::open(&path).map_err(|e| {
+                AppError::Error(anyhow::anyhow!("Failed to create database {}: {}", path.display(), e))
+            })?;
+            
+            drop(conn);
+            
+            tracing::info!("Created database file: {}", path.display());
+        } else {
+            tracing::debug!("Database file already exists: {}", path.display());
+        }
+
+        Ok(())
+    }
 }
