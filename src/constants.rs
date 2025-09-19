@@ -13,7 +13,6 @@ pub const DEFAULT_CACHE_SIZE: usize = 1000;
 pub const GIT_VERSION: &str = git_version!(fallback = env!("GIT_HASH"));
 #[allow(unused)]
 pub const DEFAULT_ROW_LIMIT: usize = 2000;
-#[allow(unused)]
 
 #[allow(unused)]
 pub const MEMORY_DB_PATH: &str = ":memory:";
