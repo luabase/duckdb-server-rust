@@ -26,3 +26,15 @@ INSTALL json; LOAD json;
 INSTALL httpfs; LOAD httpfs;
 INSTALL iceberg; LOAD iceberg;
 "#;
+
+pub const RETRIABLE_ERRORS: &[&str] = &[
+    "stale file handle",
+    "write-write conflict",
+    "database has been invalidated",
+    "failed to attach ducklake metadata"
+];
+
+pub const TIMEOUT_ERRORS: &[&str] = &[
+    "timeout",
+    "connection pool timeout",
+];

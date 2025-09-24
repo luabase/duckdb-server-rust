@@ -2,6 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use crate::cache::retrieve;
+use crate::constants::{RETRIABLE_ERRORS, TIMEOUT_ERRORS};
 use crate::interfaces::{AppError, Command, QueryInfo, QueryParams, QueryResponse};
 use crate::state::AppState;
 use tokio::time::{Duration, sleep};
@@ -26,14 +27,12 @@ where
             }
             Err(AppError::Error(err)) => {
                 let err_str = err.to_string().to_lowercase();
-                if err_str.contains("timeout") || err_str.contains("connection pool timeout") {
+                if TIMEOUT_ERRORS.iter().any(|&error| err_str.contains(error)) {
                     return Err(AppError::Timeout);
                 }
 
                 if let Some(duckdb::Error::DuckDBFailure(_, _)) = err.downcast_ref::<duckdb::Error>() {
-                    if err_str.contains("stale file handle")
-                        || err_str.contains("write-write conflict")
-                        || err_str.contains("database has been invalidated")
+                    if RETRIABLE_ERRORS.iter().any(|&error| err_str.contains(error))
                     {
                         if attempt <= max_retries {
                             let delay = if attempt == 1 {
