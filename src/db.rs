@@ -179,7 +179,6 @@ impl ConnectionPool {
     }
 
     fn reset_pool_internal(&self) -> Result<(r2d2::Pool<DuckdbConnectionManager>, u64)> {
-        // Acquire locks in consistent order to prevent deadlocks
         let extensions = self.extensions.read();
         let secrets = self.secrets.read();
         let ducklakes = self.ducklakes.read();
