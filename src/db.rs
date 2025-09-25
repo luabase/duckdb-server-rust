@@ -15,15 +15,17 @@ use crate::sql::{enforce_query_limit, is_writable_sql};
 
 #[async_trait]
 pub trait Database: Send + Sync {
-    async fn execute(&self, sql: &str, extensions: Option<&[Extension]>) -> Result<()>;
+    async fn execute(&self, sql: &str, extensions: &Option<Vec<Extension>>) -> Result<()>;
     async fn get_json(
         &self,
         sql: &String,
         args: &Option<Vec<SqlValue>>,
         prepare_sql: &Option<String>,
         limit: usize,
-        extensions: Option<&[Extension]>,
-        cancel_token: CancellationToken,
+        extensions: &Option<Vec<Extension>>,
+        secrets: &Option<Vec<SecretConfig>>,
+        ducklakes: &Option<Vec<DucklakeConfig>>,
+        cancel_token: &CancellationToken,
     ) -> Result<Vec<u8>>;
     async fn get_arrow(
         &self,
@@ -31,8 +33,10 @@ pub trait Database: Send + Sync {
         args: &Option<Vec<SqlValue>>,
         prepare_sql: &Option<String>,
         limit: usize,
-        extensions: Option<&[Extension]>,
-        cancel_token: CancellationToken,
+        extensions: &Option<Vec<Extension>>,
+        secrets: &Option<Vec<SecretConfig>>,
+        ducklakes: &Option<Vec<DucklakeConfig>>,
+        cancel_token: &CancellationToken,
     ) -> Result<Vec<u8>>;
     async fn get_record_batches(
         &self,
@@ -40,8 +44,10 @@ pub trait Database: Send + Sync {
         args: &Option<Vec<SqlValue>>,
         prepare_sql: &Option<String>,
         limit: usize,
-        extensions: Option<&[Extension]>,
-        cancel_token: CancellationToken,
+        extensions: &Option<Vec<Extension>>,
+        secrets: &Option<Vec<SecretConfig>>,
+        ducklakes: &Option<Vec<DucklakeConfig>>,
+        cancel_token: &CancellationToken,
     ) -> Result<Vec<RecordBatch>>;
     fn reconnect(&self) -> Result<()>;
     fn status(&self) -> Result<PoolStatus, AppError>;
@@ -235,11 +241,11 @@ impl ConnectionPool {
 
 #[async_trait]
 impl Database for Arc<ConnectionPool> {
-    async fn execute(&self, sql: &str, extensions: Option<&[Extension]>) -> Result<()> {
+    async fn execute(&self, sql: &str, extensions: &Option<Vec<Extension>>) -> Result<()> {
         let conn = self.get().map_err(|e| anyhow::anyhow!("{}", e))?;
 
         if let Some(exts) = extensions {
-            self.load_extensions(&conn, exts)?;
+            ConnectionPool::load_extensions(&conn, exts)?;
         }
 
         conn.execute_batch(sql)?;
@@ -257,15 +263,19 @@ impl Database for Arc<ConnectionPool> {
         args: &Option<Vec<SqlValue>>,
         prepare_sql: &Option<String>,
         limit: usize,
-        extensions: Option<&[Extension]>,
-        cancel_token: CancellationToken,
+        extensions: &Option<Vec<Extension>>,
+        secrets: &Option<Vec<SecretConfig>>,
+        ducklakes: &Option<Vec<DucklakeConfig>>,
+        cancel_token: &CancellationToken,
     ) -> Result<Vec<u8>> {
         let sql_owned = sql.clone();
         let prepare_sql_owned = prepare_sql.clone();
         let effective_sql = enforce_query_limit(&sql_owned, limit)?;
         let args = args.clone().unwrap_or_default();
         let pool = Arc::clone(self);
-        let extensions_owned = extensions.map(|exts| exts.to_vec());
+        let extensions_owned = extensions.clone();
+        let secrets_owned = secrets.clone();
+        let ducklakes_owned = ducklakes.clone();
 
         let result = tokio::select! {
             result = tokio::task::spawn_blocking({
@@ -274,11 +284,19 @@ impl Database for Arc<ConnectionPool> {
                     let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
 
                     if let Some(exts) = &extensions_owned {
-                        pool.load_extensions(&conn, exts)?;
+                        ConnectionPool::load_extensions(&conn, exts)?;
                     }
 
                     if let Some(prepare_sql) = prepare_sql_owned {
                         conn.execute_batch(&prepare_sql)?;
+                    }
+
+                    if let Some(secrets) = &secrets_owned {
+                        ConnectionPool::setup_secrets(&conn, secrets)?;
+                    }
+
+                    if let Some(ducklakes) = &ducklakes_owned {
+                        ConnectionPool::setup_ducklakes(&conn, ducklakes)?;
                     }
 
                     let mut stmt = conn.prepare(&effective_sql)?;
@@ -315,15 +333,19 @@ impl Database for Arc<ConnectionPool> {
         args: &Option<Vec<SqlValue>>,
         prepare_sql: &Option<String>,
         limit: usize,
-        extensions: Option<&[Extension]>,
-        cancel_token: CancellationToken,
+        extensions: &Option<Vec<Extension>>,
+        secrets: &Option<Vec<SecretConfig>>,
+        ducklakes: &Option<Vec<DucklakeConfig>>,
+        cancel_token: &CancellationToken,
     ) -> Result<Vec<u8>> {
         let sql_owned = sql.clone();
         let prepare_sql_owned = prepare_sql.clone();
         let effective_sql = enforce_query_limit(&sql_owned, limit)?;
         let args = args.clone().unwrap_or_default();
         let pool = Arc::clone(self);
-        let extensions_owned = extensions.map(|exts| exts.to_vec());
+        let extensions_owned = extensions.clone();
+        let secrets_owned = secrets.clone();
+        let ducklakes_owned = ducklakes.clone();
 
         let result = tokio::select! {
             result = tokio::task::spawn_blocking({
@@ -332,11 +354,19 @@ impl Database for Arc<ConnectionPool> {
                     let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
 
                     if let Some(exts) = &extensions_owned {
-                        pool.load_extensions(&conn, exts)?;
+                        ConnectionPool::load_extensions(&conn, exts)?;
                     }
 
                     if let Some(prepare_sql) = prepare_sql_owned {
                         conn.execute_batch(&prepare_sql)?;
+                    }
+
+                    if let Some(secrets) = &secrets_owned {
+                        ConnectionPool::setup_secrets(&conn, secrets)?;
+                    }
+
+                    if let Some(ducklakes) = &ducklakes_owned {
+                        ConnectionPool::setup_ducklakes(&conn, ducklakes)?;
                     }
 
                     let mut stmt = conn.prepare(&effective_sql)?;
@@ -374,16 +404,20 @@ impl Database for Arc<ConnectionPool> {
         args: &Option<Vec<SqlValue>>,
         prepare_sql: &Option<String>,
         limit: usize,
-        extensions: Option<&[Extension]>,
-        cancel_token: CancellationToken,
+        extensions: &Option<Vec<Extension>>,
+        secrets: &Option<Vec<SecretConfig>>,
+        ducklakes: &Option<Vec<DucklakeConfig>>,
+        cancel_token: &CancellationToken,
     ) -> Result<Vec<RecordBatch>> {
         let sql_owned = sql.clone();
         let effective_sql = enforce_query_limit(&sql_owned, limit)?;
         let args = args.clone().unwrap_or_default();
         let pool = Arc::clone(self);
         let prepare_sql_owned = prepare_sql.clone();
-        let extensions_owned = extensions.map(|exts| exts.to_vec());
-
+        let extensions_owned = extensions.clone();
+        let secrets_owned = secrets.clone();
+        let ducklakes_owned = ducklakes.clone();
+        
         let result = tokio::select! {
             result = tokio::task::spawn_blocking({
                 let cancel_token = cancel_token.clone();
@@ -391,11 +425,19 @@ impl Database for Arc<ConnectionPool> {
                     let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
 
                     if let Some(exts) = &extensions_owned {
-                        pool.load_extensions(&conn, exts)?;
+                        ConnectionPool::load_extensions(&conn, exts)?;
                     }
 
                     if let Some(prepare_sql) = prepare_sql_owned {
                         conn.execute_batch(&prepare_sql)?;
+                    }
+
+                    if let Some(secrets) = &secrets_owned {
+                        ConnectionPool::setup_secrets(&conn, secrets)?;
+                    }
+
+                    if let Some(ducklakes) = &ducklakes_owned {
+                        ConnectionPool::setup_ducklakes(&conn, ducklakes)?;
                     }
 
                     let mut stmt = conn.prepare(&effective_sql)?;
@@ -454,9 +496,11 @@ impl Database for Arc<ConnectionPool> {
 
 impl ConnectionPool {
     fn build_create_secret_query(secret_config: &SecretConfig) -> (String, Vec<Box<dyn ToSql>>) {
-        let mut query = String::from("CREATE OR REPLACE SECRET ? (TYPE ?, KEY_ID ?");
+        let mut query = String::from(
+            format!("CREATE OR REPLACE SECRET \"{}\" (TYPE ?, KEY_ID ?", secret_config.name)
+        );
+
         let mut params: Vec<Box<dyn ToSql>> = Vec::new();
-        params.push(Box::new(secret_config.name.clone()));
         params.push(Box::new(secret_config.secret_type.clone()));
         params.push(Box::new(secret_config.key_id.clone()));
 
@@ -485,10 +529,10 @@ impl ConnectionPool {
     }
 
     fn build_attach_ducklake_query(ducklake_config: &DucklakeConfig) -> (String, Vec<Box<dyn ToSql>>) {
-        let mut query = String::from("ATTACH ? AS ? (DATA_PATH ?");
+        let mut query = String::from(
+            format!("ATTACH OR REPLACE '{}' AS \"{}\" (DATA_PATH ?", ducklake_config.connection, ducklake_config.alias)
+        );
         let mut params: Vec<Box<dyn ToSql>> = Vec::new();
-        params.push(Box::new(ducklake_config.connection.clone()));
-        params.push(Box::new(ducklake_config.alias.clone()));
         params.push(Box::new(ducklake_config.data_path.clone()));
         if let Some(meta_schema) = &ducklake_config.meta_schema {
             query.push_str(", META_SCHEMA ?");
@@ -498,7 +542,7 @@ impl ConnectionPool {
         (query, params)
     }
 
-    fn load_extensions(&self, conn: &duckdb::Connection, extensions: &[Extension]) -> Result<()> {
+    fn load_extensions(conn: &duckdb::Connection, extensions: &[Extension]) -> Result<()> {
         if extensions.is_empty() {
             info!("No extensions to load");
             return Ok(());
@@ -529,6 +573,70 @@ impl ConnectionPool {
         if !commands.is_empty() {
             let batch = commands.join(";\n");
             conn.execute_batch(&batch)?;
+        }
+
+        Ok(())
+    }
+
+    fn setup_secrets(conn: &duckdb::Connection, secrets: &[SecretConfig]) -> Result<()> {
+        let existing_secrets: Vec<_> = conn.prepare("SELECT name FROM duckdb_secrets()")?
+            .query_arrow([])?
+            .collect();
+        let existing_secrets_names: Vec<String> = existing_secrets
+            .into_iter()
+            .map(|batch| {
+                let string_array = batch.column(0).as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
+                string_array.iter()
+                    .map(|opt| opt.unwrap_or("").to_string())
+                    .collect::<Vec<_>>()
+            })
+            .flatten()
+            .collect();
+
+        for secret in secrets {
+            let already_exists = existing_secrets_names.contains(&secret.name);
+            
+            if already_exists && secret.replace.unwrap_or(false) {
+                continue;
+            }
+            
+            let (sql, args) = Self::build_create_secret_query(secret);
+            let mut stmt = conn.prepare(&sql)?;
+            _ = stmt.execute(params_from_iter(args.iter()))?;
+
+            info!("Created secret {}", secret.name);
+        }
+
+        Ok(())
+    }
+
+    fn setup_ducklakes(conn: &duckdb::Connection, ducklakes: &[DucklakeConfig]) -> Result<()> {
+        let attached_lakes: Vec<_> = conn.prepare("PRAGMA database_list")?.query_arrow([])?.collect();
+        let attached_names: Vec<String> = attached_lakes
+            .into_iter()
+            .map(|batch| {
+                let schema = batch.schema();
+                let name_col_idx = schema.fields().iter().position(|f| f.name() == "name").unwrap_or(1);
+                let string_array = batch.column(name_col_idx).as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
+                string_array.iter()
+                    .map(|opt| opt.unwrap_or("").to_string())
+                    .collect::<Vec<_>>()
+            })
+            .flatten()
+            .collect();
+
+        for ducklake in ducklakes {
+            let already_attached = attached_names.contains(&ducklake.alias);
+            
+            if already_attached && ducklake.replace.unwrap_or(false) {
+                continue;
+            }
+            
+            let (sql, args) = Self::build_attach_ducklake_query(ducklake);
+            let mut stmt = conn.prepare(&sql)?;
+            _ = stmt.execute(params_from_iter(args.iter()))?;
+
+            info!("Attached ducklake {}", ducklake.alias);
         }
 
         Ok(())
