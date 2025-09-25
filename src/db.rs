@@ -73,8 +73,8 @@ pub struct ConnectionPool {
     pool: parking_lot::RwLock<r2d2::Pool<DuckdbConnectionManager>>,
     inode: parking_lot::RwLock<u64>,
     extensions: Option<Vec<Extension>>,
-    secrets: Option<Vec<SecretConfig>>,
-    ducklakes: Option<Vec<DucklakeConfig>>,
+    secrets: parking_lot::RwLock<Option<Vec<SecretConfig>>>,
+    ducklakes: parking_lot::RwLock<Option<Vec<DucklakeConfig>>>,
 }
 
 impl ConnectionPool {
@@ -111,8 +111,8 @@ impl ConnectionPool {
             pool: parking_lot::RwLock::new(pool),
             inode: parking_lot::RwLock::new(inode),
             extensions: extensions.clone(),
-            secrets: secrets.clone(),
-            ducklakes: ducklakes.clone(),
+            secrets: parking_lot::RwLock::new(secrets.clone()),
+            ducklakes: parking_lot::RwLock::new(ducklakes.clone()),
         })
     }
 
@@ -185,8 +185,8 @@ impl ConnectionPool {
             self.timeout, 
             &self.access_mode,
             &self.extensions,
-            &self.secrets,
-            &self.ducklakes,
+            &self.secrets.read(),
+            &self.ducklakes.read(),
         )?;
 
         let inode = std::fs::metadata(&self.db_path)?.ino();
@@ -294,10 +294,14 @@ impl Database for Arc<ConnectionPool> {
 
                     if let Some(secrets) = &secrets_owned {
                         ConnectionPool::setup_secrets(&conn, secrets)?;
+                        let merged_secrets = ConnectionPool::merge_secrets(&pool.secrets.read(), secrets);
+                        *pool.secrets.write() = Some(merged_secrets);
                     }
 
                     if let Some(ducklakes) = &ducklakes_owned {
                         ConnectionPool::setup_ducklakes(&conn, ducklakes)?;
+                        let merged_ducklakes = ConnectionPool::merge_ducklakes(&pool.ducklakes.read(), ducklakes);
+                        *pool.ducklakes.write() = Some(merged_ducklakes);
                     }
 
                     let mut stmt = conn.prepare(&effective_sql)?;
@@ -364,10 +368,14 @@ impl Database for Arc<ConnectionPool> {
 
                     if let Some(secrets) = &secrets_owned {
                         ConnectionPool::setup_secrets(&conn, secrets)?;
+                        let merged_secrets = ConnectionPool::merge_secrets(&pool.secrets.read(), secrets);
+                        *pool.secrets.write() = Some(merged_secrets);
                     }
 
                     if let Some(ducklakes) = &ducklakes_owned {
                         ConnectionPool::setup_ducklakes(&conn, ducklakes)?;
+                        let merged_ducklakes = ConnectionPool::merge_ducklakes(&pool.ducklakes.read(), ducklakes);
+                        *pool.ducklakes.write() = Some(merged_ducklakes);
                     }
 
                     let mut stmt = conn.prepare(&effective_sql)?;
@@ -435,10 +443,14 @@ impl Database for Arc<ConnectionPool> {
 
                     if let Some(secrets) = &secrets_owned {
                         ConnectionPool::setup_secrets(&conn, secrets)?;
+                        let merged_secrets = ConnectionPool::merge_secrets(&pool.secrets.read(), secrets);
+                        *pool.secrets.write() = Some(merged_secrets);
                     }
 
                     if let Some(ducklakes) = &ducklakes_owned {
                         ConnectionPool::setup_ducklakes(&conn, ducklakes)?;
+                        let merged_ducklakes = ConnectionPool::merge_ducklakes(&pool.ducklakes.read(), ducklakes);
+                        *pool.ducklakes.write() = Some(merged_ducklakes);
                     }
 
                     let mut stmt = conn.prepare(&effective_sql)?;
@@ -579,28 +591,54 @@ impl ConnectionPool {
         Ok(())
     }
 
-    fn setup_secrets(conn: &duckdb::Connection, secrets: &[SecretConfig]) -> Result<()> {
-        let existing_secrets: Vec<_> = conn.prepare("SELECT name FROM duckdb_secrets()")?
-            .query_arrow([])?
-            .collect();
-        let existing_secrets_names: Vec<String> = existing_secrets
-            .into_iter()
-            .map(|batch| {
-                let string_array = batch.column(0).as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
-                string_array.iter()
-                    .map(|opt| opt.unwrap_or("").to_string())
-                    .collect::<Vec<_>>()
-            })
-            .flatten()
-            .collect();
-
-        for secret in secrets {
-            let already_exists = existing_secrets_names.contains(&secret.name);
+    fn merge_secrets(existing: &Option<Vec<SecretConfig>>, incoming: &[SecretConfig]) -> Vec<SecretConfig> {
+        let mut merged = existing.clone().unwrap_or_default();
+        
+        for incoming_secret in incoming {
+            let replace = incoming_secret.replace.unwrap_or(false);
+            let existing_index = merged.iter().position(|s| s.name == incoming_secret.name);
             
-            if already_exists && !secret.replace.unwrap_or(false) {
-                continue;
+            match existing_index {
+                Some(idx) if replace => {
+                    merged[idx] = incoming_secret.clone();
+                }
+                Some(_) => {
+                    // Skip if exists and replace is false
+                }
+                None => {
+                    merged.push(incoming_secret.clone());
+                }
             }
+        }
+        
+        merged
+    }
+
+    fn merge_ducklakes(existing: &Option<Vec<DucklakeConfig>>, incoming: &[DucklakeConfig]) -> Vec<DucklakeConfig> {
+        let mut merged = existing.clone().unwrap_or_default();
+        
+        for incoming_ducklake in incoming {
+            let replace = incoming_ducklake.replace.unwrap_or(false);
+            let existing_index = merged.iter().position(|d| d.alias == incoming_ducklake.alias);
             
+            match existing_index {
+                Some(idx) if replace => {
+                    merged[idx] = incoming_ducklake.clone();
+                }
+                Some(_) => {
+                    // Skip if exists and replace is false
+                }
+                None => {
+                    merged.push(incoming_ducklake.clone());
+                }
+            }
+        }
+        
+        merged
+    }
+
+    fn setup_secrets(conn: &duckdb::Connection, secrets: &[SecretConfig]) -> Result<()> {
+        for secret in secrets {
             let (sql, args) = Self::build_create_secret_query(secret);
             let mut stmt = conn.prepare(&sql)?;
             _ = stmt.execute(params_from_iter(args.iter()))?;
