@@ -662,8 +662,8 @@ impl ConnectionPool {
         let string_array = batch.column(column_index).as_any().downcast_ref::<arrow::array::StringArray>()
             .ok_or_else(|| anyhow::anyhow!("Expected StringArray for {} column", column_name))?;
         
-        let result = (0..batch.num_rows())
-            .map(|i| string_array.value(i).to_string())
+        let result = string_array.iter()
+            .map(|opt| opt.unwrap_or("").to_string())
             .collect();
         Ok(result)
         
