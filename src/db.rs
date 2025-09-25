@@ -596,7 +596,7 @@ impl ConnectionPool {
         for secret in secrets {
             let already_exists = existing_secrets_names.contains(&secret.name);
             
-            if already_exists && secret.replace.unwrap_or(false) {
+            if already_exists || secret.replace.unwrap_or(false) {
                 continue;
             }
             
@@ -628,7 +628,7 @@ impl ConnectionPool {
         for ducklake in ducklakes {
             let already_attached = attached_names.contains(&ducklake.alias);
             
-            if already_attached && ducklake.replace.unwrap_or(false) {
+            if already_attached || ducklake.replace.unwrap_or(false) {
                 continue;
             }
             
