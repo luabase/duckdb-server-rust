@@ -220,19 +220,10 @@ impl ConnectionPool {
         _ = conn.execute_batch(&(AUTOINSTALL_QUERY.join(";")))?;
 
         if let Some(secrets) = secrets {
-            for secret in secrets {
-                let (sql, args) = Self::build_create_secret_query(secret);
-                let mut stmt = conn.prepare(&sql)?;
-                _ = stmt.execute(params_from_iter(args.iter()))?;
-            }
+            ConnectionPool::setup_secrets(&conn, secrets)?;
         }
-
         if let Some(ducklakes) = ducklakes {
-            for ducklake in ducklakes {
-                let (sql, args) = Self::build_attach_ducklake_query(ducklake);
-                let mut stmt = conn.prepare(&sql)?;
-                _ = stmt.execute(params_from_iter(args.iter()))?;
-            }
+            ConnectionPool::setup_ducklakes(&conn, ducklakes)?;
         }
 
         Ok(pool)
