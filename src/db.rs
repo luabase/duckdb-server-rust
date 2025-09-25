@@ -217,7 +217,7 @@ impl ConnectionPool {
 
         let conn = pool.get()?;
 
-        _ = conn.execute_batch(&(AUTOINSTALL_QUERY.join(";\n") + ";"))?;
+        _ = conn.execute_batch(&(AUTOINSTALL_QUERY.join(";")))?;
 
         if let Some(secrets) = secrets {
             for secret in secrets {
