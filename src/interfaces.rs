@@ -82,7 +82,7 @@ pub struct SecretConfig {
     pub name: String,
     #[serde(rename = "type")]
     pub secret_type: String,
-    pub key_id: String,
+    pub key_id: Option<String>,
     pub secret: Option<String>,
     pub provider: Option<String>,
     pub region: Option<String>,
