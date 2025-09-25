@@ -69,6 +69,27 @@ impl SqlValue {
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
+pub struct DucklakeConfig {
+    pub connection: String,
+    pub alias: String,
+    pub data_path: String,
+    pub meta_schema: String
+}
+
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+pub struct SecretConfig {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub secret_type: String,
+    pub key_id: String,
+    pub secret: Option<String>,
+    pub provider: Option<String>,
+    pub region: Option<String>,
+    pub token: Option<String>,
+    pub scope: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct QueryParams {
     pub database: String,
     #[serde(rename = "dynamic")]
@@ -85,6 +106,8 @@ pub struct QueryParams {
     pub extensions: Option<Vec<Extension>>,
     pub query_id: Option<String>,
     pub create: Option<bool>,
+    pub ducklake: Option<DucklakeConfig>,
+    pub secrets: Option<Vec<SecretConfig>>,
 }
 
 pub enum QueryResponse {

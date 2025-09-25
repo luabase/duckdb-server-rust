@@ -38,11 +38,11 @@ impl FlightService for FlightServer {
 
         let db_state = if let Some(dynamic_id) = &params.dynamic_id {
             self.state
-                .get_or_create_dynamic_db_state(dynamic_id, &params.database)
+                .get_or_create_dynamic_db_state(dynamic_id, &params.database, &params.secrets, &params.ducklake)
                 .await
         }
         else {
-            self.state.get_or_create_static_db_state(&params.database).await
+            self.state.get_or_create_static_db_state(&params.database, &params.secrets, &params.ducklake).await
         }
         .map_err(|e| Status::internal(e.to_string()))?;
 
@@ -53,17 +53,16 @@ impl FlightService for FlightServer {
         if sql.trim().is_empty() {
             return Err(Status::invalid_argument("SQL query cannot be empty"));
         }
-        let args = params.args.unwrap_or_default();
-        let limit = params.limit.unwrap_or(self.state.defaults.row_limit);
 
+        let limit = params.limit.unwrap_or(self.state.defaults.row_limit);
         let (query_id, cancel_token) = self.state.start_query(params.database.clone(), sql.clone()).await;
 
         let result = db_state
             .db
             .get_record_batches(
-                sql,
-                &args,
-                params.prepare_sql,
+                &sql,
+                &params.args,
+                &params.prepare_sql,
                 limit,
                 params.extensions.as_deref(),
                 cancel_token,

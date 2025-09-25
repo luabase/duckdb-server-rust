@@ -5,12 +5,12 @@ use tokio::sync::Mutex;
 use crate::interfaces::{Command, SqlValue};
 
 #[must_use]
-pub fn get_key(sql: &str, args: &[SqlValue], command: &Command) -> String {
+pub fn get_key(sql: &str, args: &Option<Vec<SqlValue>>, command: &Command) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(sql);
 
-    for arg in args {
+    while let Some(arg) = args {
         let arg_str = format!("{:?}", arg);
         hasher.update(arg_str);
     }
@@ -25,7 +25,7 @@ pub fn get_key(sql: &str, args: &[SqlValue], command: &Command) -> String {
 pub async fn retrieve<F, Fut>(
     cache: &Mutex<lru::LruCache<String, Vec<u8>>>,
     sql: &str,
-    args: &[SqlValue],
+    args: &Option<Vec<SqlValue>>,
     command: &Command,
     persist: bool,
     invalidate: bool,
@@ -54,7 +54,12 @@ where
     Ok(result)
 }
 
-pub async fn flush(cache: &Mutex<lru::LruCache<String, Vec<u8>>>, sql: &str, args: &[SqlValue], command: &Command) {
+pub async fn flush(
+    cache: &Mutex<lru::LruCache<String, Vec<u8>>>, 
+    sql: &str, 
+    args: &Option<Vec<SqlValue>>, 
+    command: &Command
+) {
     let key = get_key(sql, args, command);
 
     let mut cache_lock = cache.lock().await;

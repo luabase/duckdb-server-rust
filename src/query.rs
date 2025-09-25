@@ -7,11 +7,11 @@ use crate::interfaces::{AppError, Command, QueryInfo, QueryParams, QueryResponse
 use crate::state::AppState;
 use tokio::time::{Duration, sleep};
 
-pub async fn with_db_retry<F>(state: &AppState, params: QueryParams, query_fn: F) -> Result<QueryResponse, AppError>
+pub async fn with_db_retry<F>(state: &AppState, params: &QueryParams, query_fn: F) -> Result<QueryResponse, AppError>
 where
     F: for<'a> Fn(
         &'a AppState,
-        QueryParams,
+        &'a QueryParams,
     ) -> Pin<Box<dyn Future<Output = Result<QueryResponse, AppError>> + Send + 'a>>,
 {
     let mut attempt = 0;
@@ -20,7 +20,7 @@ where
     loop {
         attempt += 1;
 
-        match query_fn(state, params.clone()).await {
+        match query_fn(state, params).await {
             Ok(response) => return Ok(response),
             Err(AppError::Timeout) => {
                 return Err(AppError::Timeout);
@@ -70,7 +70,7 @@ where
     }
 }
 
-pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryResponse, AppError> {
+pub async fn handle(state: &AppState, params: &QueryParams) -> Result<QueryResponse, AppError> {
     let command = &params.query_type;
     if command.is_none() {
         return Err(AppError::BadRequest(anyhow::anyhow!("Query type is required")));
@@ -98,11 +98,21 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
 
     let db_state = if let Some(dynamic_id) = &params.dynamic_id {
         state
-            .get_or_create_dynamic_db_state(dynamic_id, &params.database)
+            .get_or_create_dynamic_db_state(
+                dynamic_id, 
+                &params.database, 
+                &params.secrets, 
+                &params.ducklake
+            )
             .await?
     }
     else {
-        state.get_or_create_static_db_state(&params.database).await?
+        state.get_or_create_static_db_state(
+            &params.database, 
+            &params.secrets, 
+            &params.ducklake
+        )
+        .await?
     };
 
     let (query_id, cancel_token) = state.start_query(params.database.clone(), sql.clone()).await;
@@ -118,21 +128,19 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
         Some(Command::Arrow) => {
             let persist = params.persist.unwrap_or(false);
             let invalidate = params.invalidate.unwrap_or(false);
-            let args = params.args.unwrap_or_default();
             let limit = params.limit.unwrap_or(state.defaults.row_limit);
-            let prepare_sql = params.prepare_sql;
             let buffer = retrieve(
                 &db_state.cache,
                 sql.as_str(),
-                &args,
+                &params.args,
                 &Command::Arrow,
                 persist,
                 invalidate,
                 || {
                     db_state.db.get_arrow(
-                        sql.clone(),
-                        &args,
-                        prepare_sql,
+                        &sql,
+                        &params.args,
+                        &params.prepare_sql,
                         limit,
                         params.extensions.as_deref(),
                         cancel_token.clone(),
@@ -149,21 +157,19 @@ pub async fn handle(state: &AppState, params: QueryParams) -> Result<QueryRespon
         Some(Command::Json) => {
             let persist = params.persist.unwrap_or(false);
             let invalidate = params.invalidate.unwrap_or(false);
-            let args = params.args.unwrap_or_default();
             let limit = params.limit.unwrap_or(state.defaults.row_limit);
-            let prepare_sql = params.prepare_sql;
             let json: Vec<u8> = retrieve(
                 &db_state.cache,
                 sql.as_str(),
-                &args,
+                &params.args,
                 &Command::Json,
                 persist,
                 invalidate,
                 || {
                     db_state.db.get_json(
-                        sql.clone(),
-                        &args,
-                        prepare_sql,
+                        &sql,
+                        &params.args,
+                        &params.prepare_sql,
                         limit,
                         params.extensions.as_deref(),
                         cancel_token.clone(),

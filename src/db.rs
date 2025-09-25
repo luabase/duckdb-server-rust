@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::log::info;
 
 use crate::constants::AUTOINSTALL_QUERY;
-use crate::interfaces::{AppError, Extension, SqlValue};
+use crate::interfaces::{AppError, DucklakeConfig, Extension, SecretConfig, SqlValue};
 use crate::sql::{enforce_query_limit, is_writable_sql};
 
 #[async_trait]
@@ -18,27 +18,27 @@ pub trait Database: Send + Sync {
     async fn execute(&self, sql: &str, extensions: Option<&[Extension]>) -> Result<()>;
     async fn get_json(
         &self,
-        sql: String,
-        args: &[SqlValue],
-        prepare_sql: Option<String>,
+        sql: &String,
+        args: &Option<Vec<SqlValue>>,
+        prepare_sql: &Option<String>,
         limit: usize,
         extensions: Option<&[Extension]>,
         cancel_token: CancellationToken,
     ) -> Result<Vec<u8>>;
     async fn get_arrow(
         &self,
-        sql: String,
-        args: &[SqlValue],
-        prepare_sql: Option<String>,
+        sql: &String,
+        args: &Option<Vec<SqlValue>>,
+        prepare_sql: &Option<String>,
         limit: usize,
         extensions: Option<&[Extension]>,
         cancel_token: CancellationToken,
     ) -> Result<Vec<u8>>;
     async fn get_record_batches(
         &self,
-        sql: String,
-        args: &[SqlValue],
-        prepare_sql: Option<String>,
+        sql: &String,
+        args: &Option<Vec<SqlValue>>,
+        prepare_sql: &Option<String>,
         limit: usize,
         extensions: Option<&[Extension]>,
         cancel_token: CancellationToken,
@@ -66,17 +66,33 @@ pub struct ConnectionPool {
     access_mode: AccessMode,
     pool: parking_lot::RwLock<r2d2::Pool<DuckdbConnectionManager>>,
     inode: parking_lot::RwLock<u64>,
+    secrets: Option<Vec<SecretConfig>>,
+    ducklake_config: Option<DucklakeConfig>,
 }
 
 impl ConnectionPool {
-    pub fn new(db_path: &str, pool_size: u32, timeout: Duration, access_mode: AccessMode) -> Result<Self> {
+    pub fn new(
+        db_path: &str, 
+        pool_size: u32, 
+        timeout: Duration, 
+        access_mode: AccessMode, 
+        secrets: &Option<Vec<SecretConfig>>,
+        ducklake_config: &Option<DucklakeConfig>,
+    ) -> Result<Self> {
         info!(
             "Creating connection pool: db_path={}, pool_size={}, access_mode={:?}, timeout={:?}",
             db_path, pool_size, access_mode, timeout
         );
 
         let inode = std::fs::metadata(db_path)?.ino();
-        let pool = Self::create_pool(db_path, pool_size, timeout, &access_mode)?;
+        let pool = Self::create_pool(
+            db_path, 
+            pool_size, 
+            timeout, 
+            &access_mode, 
+            &ducklake_config, 
+            &secrets
+        )?;
 
         Ok(Self {
             db_path: db_path.to_string(),
@@ -85,6 +101,8 @@ impl ConnectionPool {
             access_mode,
             pool: parking_lot::RwLock::new(pool),
             inode: parking_lot::RwLock::new(inode),
+            secrets: secrets.clone(),
+            ducklake_config: ducklake_config.clone(),
         })
     }
 
@@ -151,7 +169,15 @@ impl ConnectionPool {
     }
 
     fn reset_pool_internal(&self) -> Result<(r2d2::Pool<DuckdbConnectionManager>, u64)> {
-        let new_pool = Self::create_pool(&self.db_path, self.pool_size, self.timeout, &self.access_mode)?;
+        let new_pool = Self::create_pool(
+            &self.db_path, 
+            self.pool_size, 
+            self.timeout, 
+            &self.access_mode, 
+            &self.ducklake_config, 
+            &self.secrets
+        )?;
+
         let inode = std::fs::metadata(&self.db_path)?.ino();
 
         Ok((new_pool, inode))
@@ -162,6 +188,8 @@ impl ConnectionPool {
         pool_size: u32,
         timeout: Duration,
         access_mode: &AccessMode,
+        ducklake_config: &Option<DucklakeConfig>,
+        secrets: &Option<Vec<SecretConfig>>,
     ) -> Result<r2d2::Pool<DuckdbConnectionManager>> {
         let config = Config::default()
             .access_mode(match access_mode {
@@ -181,7 +209,19 @@ impl ConnectionPool {
             .connection_timeout(timeout)
             .build(manager)?;
 
-        _ = pool.get()?.execute_batch(AUTOINSTALL_QUERY);
+        let mut autoinstall_query: Vec<String> = AUTOINSTALL_QUERY.iter().map(|s| s.to_string()).collect();
+
+        if let Some(secrets) = secrets {
+            for secret in secrets {
+                autoinstall_query.push(Self::build_create_secret_query(secret));
+            }
+        }
+
+        if let Some(ducklake_config) = ducklake_config {
+            autoinstall_query.push(Self::build_attach_ducklake_query(ducklake_config));
+        }
+
+        _ = pool.get()?.execute_batch(&(autoinstall_query.join(";") + ";"));
 
         Ok(pool)
     }
@@ -207,9 +247,9 @@ impl Database for Arc<ConnectionPool> {
 
     async fn get_json(
         &self,
-        sql: String,
-        args: &[SqlValue],
-        prepare_sql: Option<String>,
+        sql: &String,
+        args: &Option<Vec<SqlValue>>,
+        prepare_sql: &Option<String>,
         limit: usize,
         extensions: Option<&[Extension]>,
         cancel_token: CancellationToken,
@@ -217,7 +257,7 @@ impl Database for Arc<ConnectionPool> {
         let sql_owned = sql.clone();
         let prepare_sql_owned = prepare_sql.clone();
         let effective_sql = enforce_query_limit(&sql_owned, limit)?;
-        let args = args.to_vec();
+        let args = args.clone().unwrap_or_default();
         let pool = Arc::clone(self);
         let extensions_owned = extensions.map(|exts| exts.to_vec());
 
@@ -265,9 +305,9 @@ impl Database for Arc<ConnectionPool> {
 
     async fn get_arrow(
         &self,
-        sql: String,
-        args: &[SqlValue],
-        prepare_sql: Option<String>,
+        sql: &String,
+        args: &Option<Vec<SqlValue>>,
+        prepare_sql: &Option<String>,
         limit: usize,
         extensions: Option<&[Extension]>,
         cancel_token: CancellationToken,
@@ -275,7 +315,7 @@ impl Database for Arc<ConnectionPool> {
         let sql_owned = sql.clone();
         let prepare_sql_owned = prepare_sql.clone();
         let effective_sql = enforce_query_limit(&sql_owned, limit)?;
-        let args = args.to_vec();
+        let args = args.clone().unwrap_or_default();
         let pool = Arc::clone(self);
         let extensions_owned = extensions.map(|exts| exts.to_vec());
 
@@ -324,16 +364,16 @@ impl Database for Arc<ConnectionPool> {
 
     async fn get_record_batches(
         &self,
-        sql: String,
-        args: &[SqlValue],
-        prepare_sql: Option<String>,
+        sql: &String,
+        args: &Option<Vec<SqlValue>>,
+        prepare_sql: &Option<String>,
         limit: usize,
         extensions: Option<&[Extension]>,
         cancel_token: CancellationToken,
     ) -> Result<Vec<RecordBatch>> {
         let sql_owned = sql.clone();
         let effective_sql = enforce_query_limit(&sql_owned, limit)?;
-        let args = args.to_vec();
+        let args = args.clone().unwrap_or_default();
         let pool = Arc::clone(self);
         let prepare_sql_owned = prepare_sql.clone();
         let extensions_owned = extensions.map(|exts| exts.to_vec());
@@ -407,6 +447,40 @@ impl Database for Arc<ConnectionPool> {
 }
 
 impl ConnectionPool {
+    fn build_create_secret_query(secret_config: &SecretConfig) -> String {
+        let query = format!(
+            "CREATE OR REPLACE SECRET \"{}\" (TYPE {}, KEY_ID '{}'",
+            secret_config.name, secret_config.secret_type, secret_config.key_id
+        );
+
+        let mut parts = vec![query];
+        
+        if let Some(secret) = &secret_config.secret {
+            parts.push(format!("SECRET '{}'", secret));
+        }
+        if let Some(provider) = &secret_config.provider {
+            parts.push(format!("PROVIDER '{}'", provider));
+        }
+        if let Some(region) = &secret_config.region {
+            parts.push(format!("REGION '{}'", region));
+        }
+        if let Some(token) = &secret_config.token {
+            parts.push(format!("TOKEN '{}'", token));
+        }
+        if let Some(scope) = &secret_config.scope {
+            parts.push(format!("SCOPE '{}'", scope));
+        }
+
+        format!("{})", parts.join(", "))
+    }
+
+    fn build_attach_ducklake_query(ducklake_config: &DucklakeConfig) -> String {
+        format!(
+            "ATTACH '{}' AS {} (DATA_PATH '{}', META_SCHEMA '{}')",
+            ducklake_config.connection, ducklake_config.alias, ducklake_config.data_path, ducklake_config.meta_schema
+        )
+    }
+
     fn load_extensions(&self, conn: &duckdb::Connection, extensions: &[Extension]) -> Result<()> {
         if extensions.is_empty() {
             info!("No extensions to load");

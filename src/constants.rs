@@ -20,12 +20,15 @@ pub const MEMORY_DB_PATH: &str = ":memory:";
 pub static FULL_VERSION: Lazy<String> = Lazy::new(|| format!("{} (git {})", env!("CARGO_PKG_VERSION"), GIT_VERSION));
 
 #[allow(unused)]
-pub const AUTOINSTALL_QUERY: &str = r#"
-INSTALL icu; LOAD icu;
-INSTALL json; LOAD json;
-INSTALL httpfs; LOAD httpfs;
-INSTALL iceberg; LOAD iceberg;
-"#;
+pub const AUTOINSTALL_QUERY: &[&str] = &[
+"INSTALL icu", "LOAD icu",
+"INSTALL json", "LOAD json",
+"INSTALL httpfs", "LOAD httpfs",
+"INSTALL iceberg", "LOAD iceberg",
+"INSTALL ducklake", "LOAD ducklake",
+"INSTALL postgres", "LOAD postgres",
+"INSTALL s3", "LOAD s3",
+];
 
 pub const RETRIABLE_ERRORS: &[&str] = &[
     "stale file handle",

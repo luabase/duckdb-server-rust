@@ -69,7 +69,7 @@ async fn handle_get(
     State(app_state): State<Arc<AppState>>,
     Query(params): Query<QueryParams>,
 ) -> Result<QueryResponse, AppError> {
-    let res = query::with_db_retry(&app_state, params, |state, params| {
+    let res = query::with_db_retry(&app_state, &params, |state, params| {
         Box::pin(query::handle(state, params))
     })
     .await?;
@@ -82,7 +82,7 @@ async fn handle_post(
     State(app_state): State<Arc<AppState>>,
     Json(params): Json<QueryParams>,
 ) -> Result<QueryResponse, AppError> {
-    let res = query::with_db_retry(&app_state, params, |state, params| {
+    let res = query::with_db_retry(&app_state, &params, |state, params| {
         Box::pin(query::handle(state, params))
     })
     .await?;
