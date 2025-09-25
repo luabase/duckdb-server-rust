@@ -67,7 +67,7 @@ pub struct ConnectionPool {
     pool: parking_lot::RwLock<r2d2::Pool<DuckdbConnectionManager>>,
     inode: parking_lot::RwLock<u64>,
     secrets: Option<Vec<SecretConfig>>,
-    ducklake_config: Option<DucklakeConfig>,
+    ducklakes: Option<Vec<DucklakeConfig>>,
 }
 
 impl ConnectionPool {
@@ -77,7 +77,7 @@ impl ConnectionPool {
         timeout: Duration, 
         access_mode: AccessMode, 
         secrets: &Option<Vec<SecretConfig>>,
-        ducklake_config: &Option<DucklakeConfig>,
+        ducklakes: &Option<Vec<DucklakeConfig>>,
     ) -> Result<Self> {
         info!(
             "Creating connection pool: db_path={}, pool_size={}, access_mode={:?}, timeout={:?}",
@@ -90,7 +90,7 @@ impl ConnectionPool {
             pool_size, 
             timeout, 
             &access_mode, 
-            &ducklake_config, 
+            &ducklakes, 
             &secrets
         )?;
 
@@ -102,7 +102,7 @@ impl ConnectionPool {
             pool: parking_lot::RwLock::new(pool),
             inode: parking_lot::RwLock::new(inode),
             secrets: secrets.clone(),
-            ducklake_config: ducklake_config.clone(),
+            ducklakes: ducklakes.clone(),
         })
     }
 
@@ -174,7 +174,7 @@ impl ConnectionPool {
             self.pool_size, 
             self.timeout, 
             &self.access_mode, 
-            &self.ducklake_config, 
+            &self.ducklakes, 
             &self.secrets
         )?;
 
@@ -188,7 +188,7 @@ impl ConnectionPool {
         pool_size: u32,
         timeout: Duration,
         access_mode: &AccessMode,
-        ducklake_config: &Option<DucklakeConfig>,
+        ducklakes: &Option<Vec<DucklakeConfig>>,
         secrets: &Option<Vec<SecretConfig>>,
     ) -> Result<r2d2::Pool<DuckdbConnectionManager>> {
         let config = Config::default()
@@ -209,19 +209,23 @@ impl ConnectionPool {
             .connection_timeout(timeout)
             .build(manager)?;
 
-        let mut autoinstall_query: Vec<String> = AUTOINSTALL_QUERY.iter().map(|s| s.to_string()).collect();
+        let conn = pool.get()?;
+
+        _ = conn.execute_batch(&(AUTOINSTALL_QUERY.join(";\n") + ";"))?;
 
         if let Some(secrets) = secrets {
             for secret in secrets {
-                autoinstall_query.push(Self::build_create_secret_query(secret));
+                let (sql, args) = Self::build_create_secret_query(secret);
+                conn.execute(&sql, params_from_iter(args.iter()))?;
             }
         }
 
-        if let Some(ducklake_config) = ducklake_config {
-            autoinstall_query.push(Self::build_attach_ducklake_query(ducklake_config));
+        if let Some(ducklakes) = ducklakes {
+            for ducklake in ducklakes {
+                let (sql, args) = Self::build_attach_ducklake_query(ducklake);
+                conn.execute(&sql, params_from_iter(args.iter()))?;
+            }
         }
-
-        _ = pool.get()?.execute_batch(&(autoinstall_query.join(";") + ";"));
 
         Ok(pool)
     }
@@ -448,7 +452,7 @@ impl Database for Arc<ConnectionPool> {
 
 impl ConnectionPool {
     fn build_create_secret_query(secret_config: &SecretConfig) -> (String, Vec<Box<dyn ToSql>>) {
-        let mut query = String::from("CREATE OR REPLACE SECRET \"?\" (TYPE ?, KEY_ID ?");
+        let mut query = String::from("CREATE OR REPLACE SECRET ? (TYPE ?, KEY_ID ?");
         let mut params: Vec<Box<dyn ToSql>> = Vec::new();
         params.push(Box::new(secret_config.name.clone()));
         params.push(Box::new(secret_config.secret_type.clone()));
@@ -478,11 +482,14 @@ impl ConnectionPool {
         (query, params)
     }
 
-    fn build_attach_ducklake_query(ducklake_config: &DucklakeConfig) -> String {
-        format!(
-            "ATTACH '{}' AS {} (DATA_PATH '{}', META_SCHEMA '{}')",
-            ducklake_config.connection, ducklake_config.alias, ducklake_config.data_path, ducklake_config.meta_schema
-        )
+    fn build_attach_ducklake_query(ducklake_config: &DucklakeConfig) -> (String, Vec<Box<dyn ToSql>>) {
+        let query = String::from("ATTACH ? AS ? (DATA_PATH ?, META_SCHEMA ?)");
+        let mut params: Vec<Box<dyn ToSql>> = Vec::new();
+        params.push(Box::new(ducklake_config.connection.clone()));
+        params.push(Box::new(ducklake_config.alias.clone()));
+        params.push(Box::new(ducklake_config.data_path.clone()));
+        params.push(Box::new(ducklake_config.meta_schema.clone()));
+        (query, params)
     }
 
     fn load_extensions(&self, conn: &duckdb::Connection, extensions: &[Extension]) -> Result<()> {
