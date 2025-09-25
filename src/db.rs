@@ -72,7 +72,7 @@ pub struct ConnectionPool {
     access_mode: AccessMode,
     pool: parking_lot::RwLock<r2d2::Pool<DuckdbConnectionManager>>,
     inode: parking_lot::RwLock<u64>,
-    extensions: Option<Vec<Extension>>,
+    extensions: parking_lot::RwLock<Option<Vec<Extension>>>,
     secrets: parking_lot::RwLock<Option<Vec<SecretConfig>>>,
     ducklakes: parking_lot::RwLock<Option<Vec<DucklakeConfig>>>,
 }
@@ -110,7 +110,7 @@ impl ConnectionPool {
             access_mode,
             pool: parking_lot::RwLock::new(pool),
             inode: parking_lot::RwLock::new(inode),
-            extensions: extensions.clone(),
+            extensions: parking_lot::RwLock::new(extensions.clone()),
             secrets: parking_lot::RwLock::new(secrets.clone()),
             ducklakes: parking_lot::RwLock::new(ducklakes.clone()),
         })
@@ -184,7 +184,7 @@ impl ConnectionPool {
             self.pool_size, 
             self.timeout, 
             &self.access_mode,
-            &self.extensions,
+            &self.extensions.read(),
             &self.secrets.read(),
             &self.ducklakes.read(),
         )?;
@@ -284,12 +284,14 @@ impl Database for Arc<ConnectionPool> {
                 move || -> Result<Vec<u8>> {
                     let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
 
-                    if let Some(exts) = &extensions_owned {
-                        ConnectionPool::load_extensions(&conn, exts)?;
-                    }
-
                     if let Some(prepare_sql) = prepare_sql_owned {
                         conn.execute_batch(&prepare_sql)?;
+                    }
+
+                    if let Some(exts) = &extensions_owned {
+                        ConnectionPool::load_extensions(&conn, exts)?;
+                        let merged_extensions = ConnectionPool::merge_extensions(&pool.extensions.read(), exts);
+                        *pool.extensions.write() = Some(merged_extensions);
                     }
 
                     if let Some(secrets) = &secrets_owned {
@@ -358,12 +360,14 @@ impl Database for Arc<ConnectionPool> {
                 move || -> Result<Vec<u8>> {
                     let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
 
-                    if let Some(exts) = &extensions_owned {
-                        ConnectionPool::load_extensions(&conn, exts)?;
-                    }
-
                     if let Some(prepare_sql) = prepare_sql_owned {
                         conn.execute_batch(&prepare_sql)?;
+                    }
+
+                    if let Some(exts) = &extensions_owned {
+                        ConnectionPool::load_extensions(&conn, exts)?;
+                        let merged_extensions = ConnectionPool::merge_extensions(&pool.extensions.read(), exts);
+                        *pool.extensions.write() = Some(merged_extensions);
                     }
 
                     if let Some(secrets) = &secrets_owned {
@@ -433,12 +437,14 @@ impl Database for Arc<ConnectionPool> {
                 move || -> Result<Vec<RecordBatch>> {
                     let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
 
-                    if let Some(exts) = &extensions_owned {
-                        ConnectionPool::load_extensions(&conn, exts)?;
-                    }
-
                     if let Some(prepare_sql) = prepare_sql_owned {
                         conn.execute_batch(&prepare_sql)?;
+                    }
+
+                    if let Some(exts) = &extensions_owned {
+                        ConnectionPool::load_extensions(&conn, exts)?;
+                        let merged_extensions = ConnectionPool::merge_extensions(&pool.extensions.read(), exts);
+                        *pool.extensions.write() = Some(merged_extensions);
                     }
 
                     if let Some(secrets) = &secrets_owned {
@@ -633,6 +639,25 @@ impl ConnectionPool {
                 }
                 None => {
                     merged.push(incoming_ducklake.clone());
+                }
+            }
+        }
+        
+        merged
+    }
+
+    fn merge_extensions(existing: &Option<Vec<Extension>>, incoming: &[Extension]) -> Vec<Extension> {
+        let mut merged = existing.clone().unwrap_or_default();
+        
+        for incoming_extension in incoming {
+            let existing_index = merged.iter().position(|e| e.name == incoming_extension.name);
+            
+            match existing_index {
+                Some(idx) => {
+                    merged[idx] = incoming_extension.clone();
+                }
+                None => {
+                    merged.push(incoming_extension.clone());
                 }
             }
         }
