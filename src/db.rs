@@ -585,9 +585,12 @@ impl ConnectionPool {
         
         let mut extension_map: std::collections::HashMap<String, (bool, bool)> = std::collections::HashMap::new();
         for batch in existing_extensions {
-            let name_array = batch.column(0).as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
-            let loaded_array = batch.column(1).as_any().downcast_ref::<arrow::array::BooleanArray>().unwrap();
-            let installed_array = batch.column(2).as_any().downcast_ref::<arrow::array::BooleanArray>().unwrap();
+            let name_array = batch.column(0).as_any().downcast_ref::<arrow::array::StringArray>()
+                .ok_or_else(|| anyhow::anyhow!("Expected StringArray for extension_name column"))?;
+            let loaded_array = batch.column(1).as_any().downcast_ref::<arrow::array::BooleanArray>()
+                .ok_or_else(|| anyhow::anyhow!("Expected BooleanArray for loaded column"))?;
+            let installed_array = batch.column(2).as_any().downcast_ref::<arrow::array::BooleanArray>()
+                .ok_or_else(|| anyhow::anyhow!("Expected BooleanArray for installed column"))?;
             
             for i in 0..batch.num_rows() {
                 let name = name_array.value(i).to_string();
@@ -708,14 +711,17 @@ impl ConnectionPool {
         let attached_lakes: Vec<_> = conn.prepare("PRAGMA database_list")?.query_arrow([])?.collect();
         let attached_names: Vec<String> = attached_lakes
             .into_iter()
-            .map(|batch| {
+            .map(|batch| -> Result<Vec<String>> {
                 let schema = batch.schema();
                 let name_col_idx = schema.fields().iter().position(|f| f.name() == "name").unwrap_or(1);
-                let string_array = batch.column(name_col_idx).as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
-                string_array.iter()
+                let string_array = batch.column(name_col_idx).as_any().downcast_ref::<arrow::array::StringArray>()
+                    .ok_or_else(|| anyhow::anyhow!("Expected StringArray for name column"))?;
+                Ok(string_array.iter()
                     .map(|opt| opt.unwrap_or("").to_string())
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>())
             })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
             .flatten()
             .collect();
 
