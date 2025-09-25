@@ -483,12 +483,16 @@ impl ConnectionPool {
     }
 
     fn build_attach_ducklake_query(ducklake_config: &DucklakeConfig) -> (String, Vec<Box<dyn ToSql>>) {
-        let query = String::from("ATTACH ? AS ? (DATA_PATH ?, META_SCHEMA ?)");
+        let mut query = String::from("ATTACH ? AS ? (DATA_PATH ?");
         let mut params: Vec<Box<dyn ToSql>> = Vec::new();
         params.push(Box::new(ducklake_config.connection.clone()));
         params.push(Box::new(ducklake_config.alias.clone()));
         params.push(Box::new(ducklake_config.data_path.clone()));
-        params.push(Box::new(ducklake_config.meta_schema.clone()));
+        if let Some(meta_schema) = &ducklake_config.meta_schema {
+            query.push_str(", META_SCHEMA ?");
+            params.push(Box::new(meta_schema.clone()));
+        }
+        query.push(')');
         (query, params)
     }
 
