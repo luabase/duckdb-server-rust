@@ -72,6 +72,7 @@ pub struct ConnectionPool {
     access_mode: AccessMode,
     pool: parking_lot::RwLock<r2d2::Pool<DuckdbConnectionManager>>,
     inode: parking_lot::RwLock<u64>,
+    extensions: Option<Vec<Extension>>,
     secrets: Option<Vec<SecretConfig>>,
     ducklakes: Option<Vec<DucklakeConfig>>,
 }
@@ -82,6 +83,7 @@ impl ConnectionPool {
         pool_size: u32, 
         timeout: Duration, 
         access_mode: AccessMode, 
+        extensions: &Option<Vec<Extension>>,
         secrets: &Option<Vec<SecretConfig>>,
         ducklakes: &Option<Vec<DucklakeConfig>>,
     ) -> Result<Self> {
@@ -96,8 +98,9 @@ impl ConnectionPool {
             pool_size, 
             timeout, 
             &access_mode, 
+            &extensions,
+            &secrets,
             &ducklakes, 
-            &secrets
         )?;
 
         Ok(Self {
@@ -107,6 +110,7 @@ impl ConnectionPool {
             access_mode,
             pool: parking_lot::RwLock::new(pool),
             inode: parking_lot::RwLock::new(inode),
+            extensions: extensions.clone(),
             secrets: secrets.clone(),
             ducklakes: ducklakes.clone(),
         })
@@ -179,9 +183,10 @@ impl ConnectionPool {
             &self.db_path, 
             self.pool_size, 
             self.timeout, 
-            &self.access_mode, 
-            &self.ducklakes, 
-            &self.secrets
+            &self.access_mode,
+            &self.extensions,
+            &self.secrets,
+            &self.ducklakes,
         )?;
 
         let inode = std::fs::metadata(&self.db_path)?.ino();
@@ -194,8 +199,9 @@ impl ConnectionPool {
         pool_size: u32,
         timeout: Duration,
         access_mode: &AccessMode,
-        ducklakes: &Option<Vec<DucklakeConfig>>,
+        extensions: &Option<Vec<Extension>>,
         secrets: &Option<Vec<SecretConfig>>,
+        ducklakes: &Option<Vec<DucklakeConfig>>,
     ) -> Result<r2d2::Pool<DuckdbConnectionManager>> {
         let config = Config::default()
             .access_mode(match access_mode {
@@ -218,6 +224,10 @@ impl ConnectionPool {
         let conn = pool.get()?;
 
         _ = conn.execute_batch(&(AUTOINSTALL_QUERY.join(";")))?;
+
+        if let Some(extensions) = extensions {
+            ConnectionPool::load_extensions(&conn, extensions)?;
+        }
 
         if let Some(secrets) = secrets {
             ConnectionPool::setup_secrets(&conn, secrets)?;
