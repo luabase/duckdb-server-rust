@@ -570,26 +570,44 @@ impl ConnectionPool {
             return Ok(());
         }
 
-        info!(
-            "Loading {} extensions: {:?}",
-            extensions.len(),
-            extensions.iter().map(|e| &e.name).collect::<Vec<_>>()
-        );
+        let existing_extensions: Vec<_> = conn.prepare("SELECT extension_name, loaded, installed FROM duckdb_extensions()")?
+            .query_arrow([])?
+            .collect();
+        
+        let mut extension_map: std::collections::HashMap<String, (bool, bool)> = std::collections::HashMap::new();
+        for batch in existing_extensions {
+            let name_array = batch.column(0).as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
+            let loaded_array = batch.column(1).as_any().downcast_ref::<arrow::array::BooleanArray>().unwrap();
+            let installed_array = batch.column(2).as_any().downcast_ref::<arrow::array::BooleanArray>().unwrap();
+            
+            for i in 0..batch.num_rows() {
+                let name = name_array.value(i).to_string();
+                let loaded = loaded_array.value(i);
+                let installed = installed_array.value(i);
+                extension_map.insert(name, (loaded, installed));
+            }
+        }
 
         let mut commands = Vec::new();
         for ext in extensions {
-            let install_sql = if let Some(source) = &ext.source {
-                info!("Installing extension {} from source {}", ext.name, source);
-                format!("INSTALL {} FROM {}", ext.name, source)
+            let (loaded, installed) = extension_map.get(&ext.name).unwrap_or(&(false, false));
+            
+            if !installed {
+                let install_sql = if let Some(source) = &ext.source {
+                    info!("Installing extension {} from source {}", ext.name, source);
+                    format!("INSTALL {} FROM {}", ext.name, source)
+                }
+                else {
+                    info!("Installing extension {}", ext.name);
+                    format!("INSTALL {}", ext.name)
+                };
+                commands.push(install_sql);
             }
-            else {
-                info!("Installing extension {}", ext.name);
-                format!("INSTALL {}", ext.name)
-            };
-            commands.push(install_sql);
 
-            info!("Loading extension {}", ext.name);
-            commands.push(format!("LOAD {}", ext.name));
+            if !loaded {
+                info!("Loading extension {}", ext.name);
+                commands.push(format!("LOAD {}", ext.name));
+            }
         }
 
         if !commands.is_empty() {
