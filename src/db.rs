@@ -216,14 +216,16 @@ impl ConnectionPool {
         if let Some(secrets) = secrets {
             for secret in secrets {
                 let (sql, args) = Self::build_create_secret_query(secret);
-                conn.execute(&sql, params_from_iter(args.iter()))?;
+                let mut stmt = conn.prepare(&sql)?;
+                _ = stmt.execute(params_from_iter(args.iter()))?;
             }
         }
 
         if let Some(ducklakes) = ducklakes {
             for ducklake in ducklakes {
                 let (sql, args) = Self::build_attach_ducklake_query(ducklake);
-                conn.execute(&sql, params_from_iter(args.iter()))?;
+                let mut stmt = conn.prepare(&sql)?;
+                _ = stmt.execute(params_from_iter(args.iter()))?;
             }
         }
 
