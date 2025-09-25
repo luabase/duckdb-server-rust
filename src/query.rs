@@ -102,7 +102,7 @@ pub async fn handle(state: &AppState, params: &QueryParams) -> Result<QueryRespo
                 dynamic_id, 
                 &params.database, 
                 &params.secrets, 
-                &params.ducklake
+                &params.ducklakes
             )
             .await?
     }
@@ -110,7 +110,7 @@ pub async fn handle(state: &AppState, params: &QueryParams) -> Result<QueryRespo
         state.get_or_create_static_db_state(
             &params.database, 
             &params.secrets, 
-            &params.ducklake
+            &params.ducklakes
         )
         .await?
     };

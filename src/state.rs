@@ -34,7 +34,7 @@ impl AppState {
         dynamic: &str,
         database: &str,
         secrets: &Option<Vec<SecretConfig>>,
-        ducklake_config: &Option<DucklakeConfig>,
+        ducklakes: &Option<Vec<DucklakeConfig>>,
     ) -> Result<Arc<DbState>, AppError> {
         let db_path = self
             .paths
@@ -83,7 +83,7 @@ impl AppState {
             Duration::from_secs(self.defaults.pool_timeout),
             access_mode,
             secrets,
-            ducklake_config,
+            ducklakes,
         )?;
 
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
@@ -101,7 +101,7 @@ impl AppState {
         &self, 
         id: &str, 
         secrets: &Option<Vec<SecretConfig>>, 
-        ducklake_config: &Option<DucklakeConfig>
+        ducklakes: &Option<Vec<DucklakeConfig>>
     ) -> Result<Arc<DbState>, AppError> {
         let mut states = self.states.lock().await;
 
@@ -144,7 +144,7 @@ impl AppState {
             Duration::from_secs(self.defaults.pool_timeout),
             access_mode,
             secrets,
-            ducklake_config,
+            ducklakes,
         )?;
 
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));

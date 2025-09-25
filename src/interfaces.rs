@@ -106,7 +106,7 @@ pub struct QueryParams {
     pub extensions: Option<Vec<Extension>>,
     pub query_id: Option<String>,
     pub create: Option<bool>,
-    pub ducklake: Option<DucklakeConfig>,
+    pub ducklakes: Option<Vec<DucklakeConfig>>,
     pub secrets: Option<Vec<SecretConfig>>,
 }
 
