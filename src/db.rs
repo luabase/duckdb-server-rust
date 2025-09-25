@@ -662,11 +662,11 @@ impl ConnectionPool {
         let string_array = batch.column(column_index).as_any().downcast_ref::<arrow::array::StringArray>()
             .ok_or_else(|| anyhow::anyhow!("Expected StringArray for {} column", column_name))?;
         
-        let mut result = Vec::new();
-        for i in 0..batch.num_rows() {
-            result.push(string_array.value(i).to_string());
-        }
+        let result = (0..batch.num_rows())
+            .map(|i| string_array.value(i).to_string())
+            .collect();
         Ok(result)
+        
     }
 
     fn setup_and_merge_configs(
