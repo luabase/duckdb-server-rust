@@ -73,7 +73,7 @@ pub struct DucklakeConfig {
     pub connection: String,
     pub alias: String,
     pub data_path: String,
-    pub meta_schema: String
+    pub meta_schema: Option<String>
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
