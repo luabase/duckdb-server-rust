@@ -721,21 +721,16 @@ impl ConnectionPool {
 
     fn setup_ducklakes(conn: &duckdb::Connection, ducklakes: &[DucklakeConfig]) -> Result<()> {
         let attached_lakes: Vec<_> = conn.prepare("PRAGMA database_list")?.query_arrow([])?.collect();
-        let attached_names: Vec<String> = attached_lakes
-            .into_iter()
-            .map(|batch| -> Result<Vec<String>> {
-                let schema = batch.schema();
-                let name_col_idx = schema.fields().iter().position(|f| f.name() == "name").unwrap_or(1);
-                let string_array = batch.column(name_col_idx).as_any().downcast_ref::<arrow::array::StringArray>()
-                    .ok_or_else(|| anyhow::anyhow!("Expected StringArray for name column"))?;
-                Ok(string_array.iter()
-                    .map(|opt| opt.unwrap_or("").to_string())
-                    .collect::<Vec<_>>())
-            })
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .flatten()
-            .collect();
+        let mut attached_names: Vec<String> = Vec::new();
+        for batch in attached_lakes {
+            let schema = batch.schema();
+            let name_col_idx = schema.fields().iter().position(|f| f.name() == "name").unwrap_or(1);
+            let string_array = batch.column(name_col_idx).as_any().downcast_ref::<arrow::array::StringArray>()
+                .ok_or_else(|| anyhow::anyhow!("Expected StringArray for name column"))?;
+            for i in 0..batch.num_rows() {
+                attached_names.push(string_array.value(i).to_string());
+            }
+        }
 
         for ducklake in ducklakes {
             let already_attached = attached_names.contains(&ducklake.alias);
