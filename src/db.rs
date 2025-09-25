@@ -288,38 +288,13 @@ impl Database for Arc<ConnectionPool> {
                         conn.execute_batch(&prepare_sql)?;
                     }
 
-                    if let Some(exts) = &extensions_owned {
-                        ConnectionPool::load_extensions(&conn, exts)?;
-                        // Compute merged_extensions before acquiring the write lock
-                        let merged_extensions = {
-                            let extensions_guard = pool.extensions.read();
-                            ConnectionPool::merge_extensions(&*extensions_guard, exts)
-                        };
-                        let mut extensions_guard = pool.extensions.write();
-                        *extensions_guard = Some(merged_extensions);
-                    }
-
-                    if let Some(secrets) = &secrets_owned {
-                        ConnectionPool::setup_secrets(&conn, secrets)?;
-                        // Compute merged_secrets before acquiring the write lock
-                        let merged_secrets = {
-                            let secrets_guard = pool.secrets.read();
-                            ConnectionPool::merge_secrets(&*secrets_guard, secrets)
-                        };
-                        let mut secrets_guard = pool.secrets.write();
-                        *secrets_guard = Some(merged_secrets);
-                    }
-
-                    if let Some(ducklakes) = &ducklakes_owned {
-                        ConnectionPool::setup_ducklakes(&conn, ducklakes)?;
-                        // Compute merged_ducklakes before acquiring the write lock
-                        let merged_ducklakes = {
-                            let ducklakes_guard = pool.ducklakes.read();
-                            ConnectionPool::merge_ducklakes(&*ducklakes_guard, ducklakes)
-                        };
-                        let mut ducklakes_guard = pool.ducklakes.write();
-                        *ducklakes_guard = Some(merged_ducklakes);
-                    }
+                    ConnectionPool::setup_and_merge_configs(
+                        &conn,
+                        &pool,
+                        extensions_owned.as_deref(),
+                        secrets_owned.as_deref(),
+                        ducklakes_owned.as_deref(),
+                    )?;
 
                     let mut stmt = conn.prepare(&effective_sql)?;
                     let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
@@ -379,35 +354,13 @@ impl Database for Arc<ConnectionPool> {
                         conn.execute_batch(&prepare_sql)?;
                     }
 
-                    if let Some(exts) = &extensions_owned {
-                        ConnectionPool::load_extensions(&conn, exts)?;
-                        let merged_extensions = {
-                            let extensions_guard = pool.extensions.read();
-                            ConnectionPool::merge_extensions(&*extensions_guard, exts)
-                        };
-                        let mut extensions_guard = pool.extensions.write();
-                        *extensions_guard = Some(merged_extensions);
-                    }
-
-                    if let Some(secrets) = &secrets_owned {
-                        ConnectionPool::setup_secrets(&conn, secrets)?;
-                        let merged_secrets = {
-                            let secrets_guard = pool.secrets.read();
-                            ConnectionPool::merge_secrets(&*secrets_guard, secrets)
-                        };
-                        let mut secrets_guard = pool.secrets.write();
-                        *secrets_guard = Some(merged_secrets);
-                    }
-
-                    if let Some(ducklakes) = &ducklakes_owned {
-                        ConnectionPool::setup_ducklakes(&conn, ducklakes)?;
-                        let merged_ducklakes = {
-                            let ducklakes_guard = pool.ducklakes.read();
-                            ConnectionPool::merge_ducklakes(&*ducklakes_guard, ducklakes)
-                        };
-                        let mut ducklakes_guard = pool.ducklakes.write();
-                        *ducklakes_guard = Some(merged_ducklakes);
-                    }
+                    ConnectionPool::setup_and_merge_configs(
+                        &conn,
+                        &pool,
+                        extensions_owned.as_deref(),
+                        secrets_owned.as_deref(),
+                        ducklakes_owned.as_deref(),
+                    )?;
 
                     let mut stmt = conn.prepare(&effective_sql)?;
                     let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
@@ -468,35 +421,13 @@ impl Database for Arc<ConnectionPool> {
                         conn.execute_batch(&prepare_sql)?;
                     }
 
-                    if let Some(exts) = &extensions_owned {
-                        ConnectionPool::load_extensions(&conn, exts)?;
-                        let merged_extensions = {
-                            let extensions_guard = pool.extensions.read();
-                            ConnectionPool::merge_extensions(&*extensions_guard, exts)
-                        };
-                        let mut extensions_guard = pool.extensions.write();
-                        *extensions_guard = Some(merged_extensions);
-                    }
-
-                    if let Some(secrets) = &secrets_owned {
-                        ConnectionPool::setup_secrets(&conn, secrets)?;
-                        let merged_secrets = {
-                            let secrets_guard = pool.secrets.read();
-                            ConnectionPool::merge_secrets(&*secrets_guard, secrets)
-                        };
-                        let mut secrets_guard = pool.secrets.write();
-                        *secrets_guard = Some(merged_secrets);
-                    }
-
-                    if let Some(ducklakes) = &ducklakes_owned {
-                        ConnectionPool::setup_ducklakes(&conn, ducklakes)?;
-                        let merged_ducklakes = {
-                            let ducklakes_guard = pool.ducklakes.read();
-                            ConnectionPool::merge_ducklakes(&*ducklakes_guard, ducklakes)
-                        };
-                        let mut ducklakes_guard = pool.ducklakes.write();
-                        *ducklakes_guard = Some(merged_ducklakes);
-                    }
+                    ConnectionPool::setup_and_merge_configs(
+                        &conn,
+                        &pool,
+                        extensions_owned.as_deref(),
+                        secrets_owned.as_deref(),
+                        ducklakes_owned.as_deref(),
+                    )?;
 
                     let mut stmt = conn.prepare(&effective_sql)?;
                     let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
@@ -723,6 +654,46 @@ impl ConnectionPool {
         }
         
         merged
+    }
+
+    fn setup_and_merge_configs(
+        conn: &duckdb::Connection,
+        pool: &Arc<ConnectionPool>,
+        extensions: Option<&[Extension]>,
+        secrets: Option<&[SecretConfig]>,
+        ducklakes: Option<&[DucklakeConfig]>,
+    ) -> Result<()> {
+        if let Some(exts) = extensions {
+            ConnectionPool::load_extensions(conn, exts)?;
+            let merged_extensions = {
+                let extensions_guard = pool.extensions.read();
+                ConnectionPool::merge_extensions(&*extensions_guard, exts)
+            };
+            let mut extensions_guard = pool.extensions.write();
+            *extensions_guard = Some(merged_extensions);
+        }
+
+        if let Some(secrets) = secrets {
+            ConnectionPool::setup_secrets(conn, secrets)?;
+            let merged_secrets = {
+                let secrets_guard = pool.secrets.read();
+                ConnectionPool::merge_secrets(&*secrets_guard, secrets)
+            };
+            let mut secrets_guard = pool.secrets.write();
+            *secrets_guard = Some(merged_secrets);
+        }
+
+        if let Some(ducklakes) = ducklakes {
+            ConnectionPool::setup_ducklakes(conn, ducklakes)?;
+            let merged_ducklakes = {
+                let ducklakes_guard = pool.ducklakes.read();
+                ConnectionPool::merge_ducklakes(&*ducklakes_guard, ducklakes)
+            };
+            let mut ducklakes_guard = pool.ducklakes.write();
+            *ducklakes_guard = Some(merged_ducklakes);
+        }
+
+        Ok(())
     }
 
     fn setup_secrets(conn: &duckdb::Connection, secrets: &[SecretConfig]) -> Result<()> {
