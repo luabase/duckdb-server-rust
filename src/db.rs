@@ -510,13 +510,16 @@ impl Database for Arc<ConnectionPool> {
 impl ConnectionPool {
     fn build_create_secret_query(secret_config: &SecretConfig) -> (String, Vec<Box<dyn ToSql>>) {
         let mut query = String::from(
-            format!("CREATE OR REPLACE SECRET \"{}\" (TYPE ?, KEY_ID ?", secret_config.name)
+            format!("CREATE OR REPLACE SECRET \"{}\" (TYPE ?", secret_config.name)
         );
 
         let mut params: Vec<Box<dyn ToSql>> = Vec::new();
         params.push(Box::new(secret_config.secret_type.clone()));
-        params.push(Box::new(secret_config.key_id.clone()));
 
+        if let Some(key_id) = &secret_config.key_id {
+            query.push_str(", KEY_ID ?");
+            params.push(Box::new(key_id.clone()));
+        }
         if let Some(secret) = &secret_config.secret {
             query.push_str(", SECRET ?");
             params.push(Box::new(secret.clone()));
