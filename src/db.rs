@@ -179,14 +179,19 @@ impl ConnectionPool {
     }
 
     fn reset_pool_internal(&self) -> Result<(r2d2::Pool<DuckdbConnectionManager>, u64)> {
+        // Acquire locks in consistent order to prevent deadlocks
+        let extensions = self.extensions.read();
+        let secrets = self.secrets.read();
+        let ducklakes = self.ducklakes.read();
+        
         let new_pool = Self::create_pool(
             &self.db_path, 
             self.pool_size, 
             self.timeout, 
             &self.access_mode,
-            &self.extensions.read(),
-            &self.secrets.read(),
-            &self.ducklakes.read(),
+            &*extensions,
+            &*secrets,
+            &*ducklakes,
         )?;
 
         let inode = std::fs::metadata(&self.db_path)?.ino();
@@ -665,31 +670,22 @@ impl ConnectionPool {
     ) -> Result<()> {
         if let Some(exts) = extensions {
             ConnectionPool::load_extensions(conn, exts)?;
-            let merged_extensions = {
-                let extensions_guard = pool.extensions.read();
-                ConnectionPool::merge_extensions(&*extensions_guard, exts)
-            };
             let mut extensions_guard = pool.extensions.write();
+            let merged_extensions = ConnectionPool::merge_extensions(&*extensions_guard, exts);
             *extensions_guard = Some(merged_extensions);
         }
 
         if let Some(secrets) = secrets {
             ConnectionPool::setup_secrets(conn, secrets)?;
-            let merged_secrets = {
-                let secrets_guard = pool.secrets.read();
-                ConnectionPool::merge_secrets(&*secrets_guard, secrets)
-            };
             let mut secrets_guard = pool.secrets.write();
+            let merged_secrets = ConnectionPool::merge_secrets(&*secrets_guard, secrets);
             *secrets_guard = Some(merged_secrets);
         }
 
         if let Some(ducklakes) = ducklakes {
             ConnectionPool::setup_ducklakes(conn, ducklakes)?;
-            let merged_ducklakes = {
-                let ducklakes_guard = pool.ducklakes.read();
-                ConnectionPool::merge_ducklakes(&*ducklakes_guard, ducklakes)
-            };
             let mut ducklakes_guard = pool.ducklakes.write();
+            let merged_ducklakes = ConnectionPool::merge_ducklakes(&*ducklakes_guard, ducklakes);
             *ducklakes_guard = Some(merged_ducklakes);
         }
 
