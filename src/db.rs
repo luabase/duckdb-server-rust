@@ -461,22 +461,37 @@ impl Database for Arc<ConnectionPool> {
 
                     if let Some(exts) = &extensions_owned {
                         ConnectionPool::load_extensions(&conn, exts)?;
+                        // Clone current extensions outside lock scope
+                        let current_extensions = {
+                            let extensions_guard = pool.extensions.read();
+                            extensions_guard.as_ref().cloned()
+                        };
+                        let merged_extensions = ConnectionPool::merge_extensions(&current_extensions, exts);
                         let mut extensions_guard = pool.extensions.write();
-                        let merged_extensions = ConnectionPool::merge_extensions(&*extensions_guard, exts);
                         *extensions_guard = Some(merged_extensions);
                     }
 
                     if let Some(secrets) = &secrets_owned {
                         ConnectionPool::setup_secrets(&conn, secrets)?;
+                        // Clone current secrets outside lock scope
+                        let current_secrets = {
+                            let secrets_guard = pool.secrets.read();
+                            secrets_guard.as_ref().cloned()
+                        };
+                        let merged_secrets = ConnectionPool::merge_secrets(&current_secrets, secrets);
                         let mut secrets_guard = pool.secrets.write();
-                        let merged_secrets = ConnectionPool::merge_secrets(&*secrets_guard, secrets);
                         *secrets_guard = Some(merged_secrets);
                     }
 
                     if let Some(ducklakes) = &ducklakes_owned {
                         ConnectionPool::setup_ducklakes(&conn, ducklakes)?;
+                        // Clone current ducklakes outside lock scope
+                        let current_ducklakes = {
+                            let ducklakes_guard = pool.ducklakes.read();
+                            ducklakes_guard.as_ref().cloned()
+                        };
+                        let merged_ducklakes = ConnectionPool::merge_ducklakes(&current_ducklakes, ducklakes);
                         let mut ducklakes_guard = pool.ducklakes.write();
-                        let merged_ducklakes = ConnectionPool::merge_ducklakes(&*ducklakes_guard, ducklakes);
                         *ducklakes_guard = Some(merged_ducklakes);
                     }
 
