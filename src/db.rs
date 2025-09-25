@@ -563,7 +563,7 @@ impl ConnectionPool {
 
         let mut commands = Vec::new();
         for ext in extensions {
-            let (loaded, installed) = extension_map.get(&ext.name).unwrap_or(&(false, false));
+            let (loaded, installed) = extension_map.get(&ext.name).copied().unwrap_or((false, false));
             
             if !installed {
                 let install_sql = if let Some(source) = &ext.source {
