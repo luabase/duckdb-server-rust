@@ -717,7 +717,8 @@ impl ConnectionPool {
         let mut attached_names: Vec<String> = Vec::new();
         for batch in attached_lakes {
             let schema = batch.schema();
-            let name_col_idx = schema.fields().iter().position(|f| f.name() == "name").unwrap_or(1);
+            let name_col_idx = schema.fields().iter().position(|f| f.name() == "name")
+                .ok_or_else(|| anyhow::anyhow!("'name' column not found in database_list schema"))?;
             let names = Self::extract_string_column(&batch, name_col_idx, "name")?;
             attached_names.extend(names);
         }
