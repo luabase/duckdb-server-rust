@@ -550,15 +550,13 @@ impl ConnectionPool {
         
         let mut extension_map: std::collections::HashMap<String, (bool, bool)> = std::collections::HashMap::new();
         for batch in existing_extensions {
-            let name_array = batch.column(0).as_any().downcast_ref::<arrow::array::StringArray>()
-                .ok_or_else(|| anyhow::anyhow!("Expected StringArray for extension_name column"))?;
+            let names = Self::extract_string_column(&batch, 0, "extension_name")?;
             let loaded_array = batch.column(1).as_any().downcast_ref::<arrow::array::BooleanArray>()
                 .ok_or_else(|| anyhow::anyhow!("Expected BooleanArray for loaded column"))?;
             let installed_array = batch.column(2).as_any().downcast_ref::<arrow::array::BooleanArray>()
                 .ok_or_else(|| anyhow::anyhow!("Expected BooleanArray for installed column"))?;
             
-            for i in 0..batch.num_rows() {
-                let name = name_array.value(i).to_string();
+            for (i, name) in names.into_iter().enumerate() {
                 let loaded = loaded_array.value(i);
                 let installed = installed_array.value(i);
                 extension_map.insert(name, (loaded, installed));
@@ -660,6 +658,17 @@ impl ConnectionPool {
         merged
     }
 
+    fn extract_string_column(batch: &arrow::record_batch::RecordBatch, column_index: usize, column_name: &str) -> Result<Vec<String>> {
+        let string_array = batch.column(column_index).as_any().downcast_ref::<arrow::array::StringArray>()
+            .ok_or_else(|| anyhow::anyhow!("Expected StringArray for {} column", column_name))?;
+        
+        let mut result = Vec::new();
+        for i in 0..batch.num_rows() {
+            result.push(string_array.value(i).to_string());
+        }
+        Ok(result)
+    }
+
     fn setup_and_merge_configs(
         conn: &duckdb::Connection,
         pool: &Arc<ConnectionPool>,
@@ -709,11 +718,8 @@ impl ConnectionPool {
         for batch in attached_lakes {
             let schema = batch.schema();
             let name_col_idx = schema.fields().iter().position(|f| f.name() == "name").unwrap_or(1);
-            let string_array = batch.column(name_col_idx).as_any().downcast_ref::<arrow::array::StringArray>()
-                .ok_or_else(|| anyhow::anyhow!("Expected StringArray for name column"))?;
-            for i in 0..batch.num_rows() {
-                attached_names.push(string_array.value(i).to_string());
-            }
+            let names = Self::extract_string_column(&batch, name_col_idx, "name")?;
+            attached_names.extend(names);
         }
 
         for ducklake in ducklakes {
