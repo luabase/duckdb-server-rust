@@ -10,9 +10,11 @@ pub fn get_key(sql: &str, args: &Option<Vec<SqlValue>>, command: &Command) -> St
     let mut hasher = Sha256::new();
     hasher.update(sql);
 
-    while let Some(arg) = args {
-        let arg_str = format!("{:?}", arg);
-        hasher.update(arg_str);
+    if let Some(args_vec) = args {
+        for arg in args_vec {
+            let arg_str = format!("{:?}", arg);
+            hasher.update(arg_str);
+        }
     }
 
     format!(
