@@ -33,7 +33,7 @@ pub async fn selective_auth_middleware(
         return Ok(next.run(request).await);
     }
 
-    let public_paths = ["/", "/healthz", "/version", "/query", "/query/"];
+    let public_paths = ["/", "/healthz", "/version"];
     
     if public_paths.contains(&path) {
         return Ok(next.run(request).await);
