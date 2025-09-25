@@ -105,9 +105,9 @@ pub struct QueryParams {
     pub args: Option<Vec<SqlValue>>,
     pub name: Option<String>,
     pub limit: Option<usize>,
-    pub extensions: Option<Vec<Extension>>,
     pub query_id: Option<String>,
     pub create: Option<bool>,
+    pub extensions: Option<Vec<Extension>>,
     pub ducklakes: Option<Vec<DucklakeConfig>>,
     pub secrets: Option<Vec<SecretConfig>>,
 }
