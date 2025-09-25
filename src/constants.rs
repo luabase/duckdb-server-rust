@@ -28,6 +28,7 @@ pub const AUTOINSTALL_QUERY: &[&str] = &[
 "INSTALL ducklake", "LOAD ducklake",
 "INSTALL postgres", "LOAD postgres",
 "INSTALL s3", "LOAD s3",
+"PRAGMA enable_object_cache",
 ];
 
 pub const RETRIABLE_ERRORS: &[&str] = &[
