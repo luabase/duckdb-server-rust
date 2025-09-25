@@ -64,8 +64,10 @@ impl FlightService for FlightServer {
                 &params.args,
                 &params.prepare_sql,
                 limit,
-                params.extensions.as_deref(),
-                cancel_token,
+                &params.extensions,
+                &params.secrets,
+                &params.ducklakes,
+                &cancel_token
             )
             .await;
 

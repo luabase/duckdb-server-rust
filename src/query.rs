@@ -142,8 +142,10 @@ pub async fn handle(state: &AppState, params: &QueryParams) -> Result<QueryRespo
                         &params.args,
                         &params.prepare_sql,
                         limit,
-                        params.extensions.as_deref(),
-                        cancel_token.clone(),
+                        &params.extensions,
+                        &params.secrets,
+                        &params.ducklakes,
+                        &cancel_token,
                     )
                 },
             )
@@ -151,7 +153,7 @@ pub async fn handle(state: &AppState, params: &QueryParams) -> Result<QueryRespo
             Ok(QueryResponse::Arrow(buffer))
         }
         Some(Command::Exec) => {
-            db_state.db.execute(sql.as_str(), params.extensions.as_deref()).await?;
+            db_state.db.execute(sql.as_str(), &params.extensions).await?;
             Ok(QueryResponse::Empty)
         }
         Some(Command::Json) => {
@@ -171,8 +173,10 @@ pub async fn handle(state: &AppState, params: &QueryParams) -> Result<QueryRespo
                         &params.args,
                         &params.prepare_sql,
                         limit,
-                        params.extensions.as_deref(),
-                        cancel_token.clone(),
+                        &params.extensions,
+                        &params.secrets,
+                        &params.ducklakes,
+                        &cancel_token,
                     )
                 },
             )

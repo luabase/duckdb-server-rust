@@ -73,7 +73,8 @@ pub struct DucklakeConfig {
     pub connection: String,
     pub alias: String,
     pub data_path: String,
-    pub meta_schema: Option<String>
+    pub meta_schema: Option<String>,
+    pub replace: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
@@ -87,6 +88,7 @@ pub struct SecretConfig {
     pub region: Option<String>,
     pub token: Option<String>,
     pub scope: Option<String>,
+    pub replace: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
