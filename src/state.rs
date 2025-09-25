@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::constants::MEMORY_DB_PATH;
 use crate::db::ConnectionPool;
-use crate::interfaces::{AppError, DbDefaults, DbPath, DbState};
+use crate::interfaces::{AppError, DbDefaults, DbPath, DbState, DucklakeConfig, SecretConfig};
 
 #[derive(Clone)]
 pub struct RunningQuery {
@@ -33,6 +33,8 @@ impl AppState {
         &self,
         dynamic: &str,
         database: &str,
+        secrets: &Option<Vec<SecretConfig>>,
+        ducklake_config: &Option<DucklakeConfig>,
     ) -> Result<Arc<DbState>, AppError> {
         let db_path = self
             .paths
@@ -80,6 +82,8 @@ impl AppState {
             self.defaults.connection_pool_size,
             Duration::from_secs(self.defaults.pool_timeout),
             access_mode,
+            secrets,
+            ducklake_config,
         )?;
 
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
@@ -93,7 +97,12 @@ impl AppState {
         Ok(new_state)
     }
 
-    pub async fn get_or_create_static_db_state(&self, id: &str) -> Result<Arc<DbState>, AppError> {
+    pub async fn get_or_create_static_db_state(
+        &self, 
+        id: &str, 
+        secrets: &Option<Vec<SecretConfig>>, 
+        ducklake_config: &Option<DucklakeConfig>
+    ) -> Result<Arc<DbState>, AppError> {
         let mut states = self.states.lock().await;
 
         if let Some(state) = states.get(id) {
@@ -134,6 +143,8 @@ impl AppState {
             effective_pool_size,
             Duration::from_secs(self.defaults.pool_timeout),
             access_mode,
+            secrets,
+            ducklake_config,
         )?;
 
         let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
