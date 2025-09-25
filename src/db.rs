@@ -447,31 +447,35 @@ impl Database for Arc<ConnectionPool> {
 }
 
 impl ConnectionPool {
-    fn build_create_secret_query(secret_config: &SecretConfig) -> String {
-        let query = format!(
-            "CREATE OR REPLACE SECRET \"{}\" (TYPE {}, KEY_ID '{}'",
-            secret_config.name, secret_config.secret_type, secret_config.key_id
-        );
+    fn build_create_secret_query(secret_config: &SecretConfig) -> (String, Vec<Box<dyn ToSql>>) {
+        let mut query = String::from("CREATE OR REPLACE SECRET \"?\" (TYPE ?, KEY_ID ?");
+        let mut params: Vec<Box<dyn ToSql>> = Vec::new();
+        params.push(Box::new(secret_config.name.clone()));
+        params.push(Box::new(secret_config.secret_type.clone()));
+        params.push(Box::new(secret_config.key_id.clone()));
 
-        let mut parts = vec![query];
-        
         if let Some(secret) = &secret_config.secret {
-            parts.push(format!("SECRET '{}'", secret));
+            query.push_str(", SECRET ?");
+            params.push(Box::new(secret.clone()));
         }
         if let Some(provider) = &secret_config.provider {
-            parts.push(format!("PROVIDER '{}'", provider));
+            query.push_str(", PROVIDER ?");
+            params.push(Box::new(provider.clone()));
         }
         if let Some(region) = &secret_config.region {
-            parts.push(format!("REGION '{}'", region));
+            query.push_str(", REGION ?");
+            params.push(Box::new(region.clone()));
         }
         if let Some(token) = &secret_config.token {
-            parts.push(format!("TOKEN '{}'", token));
+            query.push_str(", TOKEN ?");
+            params.push(Box::new(token.clone()));
         }
         if let Some(scope) = &secret_config.scope {
-            parts.push(format!("SCOPE '{}'", scope));
+            query.push_str(", SCOPE ?");
+            params.push(Box::new(scope.clone()));
         }
-
-        format!("{})", parts.join(", "))
+        query.push(')');
+        (query, params)
     }
 
     fn build_attach_ducklake_query(ducklake_config: &DucklakeConfig) -> String {
