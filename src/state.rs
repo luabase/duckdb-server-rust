@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::constants::MEMORY_DB_PATH;
 use crate::db::ConnectionPool;
-use crate::interfaces::{AppError, DbDefaults, DbPath, DbState, DucklakeConfig, SecretConfig};
+use crate::interfaces::{AppError, DbDefaults, DbPath, DbState, DucklakeConfig, Extension, SecretConfig};
 
 #[derive(Clone)]
 pub struct RunningQuery {
@@ -33,6 +33,7 @@ impl AppState {
         &self,
         dynamic: &str,
         database: &str,
+        extensions: &Option<Vec<Extension>>,
         secrets: &Option<Vec<SecretConfig>>,
         ducklakes: &Option<Vec<DucklakeConfig>>,
     ) -> Result<Arc<DbState>, AppError> {
@@ -82,6 +83,7 @@ impl AppState {
             self.defaults.connection_pool_size,
             Duration::from_secs(self.defaults.pool_timeout),
             access_mode,
+            extensions,
             secrets,
             ducklakes,
         )?;
@@ -100,6 +102,7 @@ impl AppState {
     pub async fn get_or_create_static_db_state(
         &self, 
         id: &str, 
+        extensions: &Option<Vec<Extension>>,
         secrets: &Option<Vec<SecretConfig>>, 
         ducklakes: &Option<Vec<DucklakeConfig>>
     ) -> Result<Arc<DbState>, AppError> {
@@ -143,6 +146,7 @@ impl AppState {
             effective_pool_size,
             Duration::from_secs(self.defaults.pool_timeout),
             access_mode,
+            extensions,
             secrets,
             ducklakes,
         )?;

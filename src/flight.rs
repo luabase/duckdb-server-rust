@@ -38,11 +38,22 @@ impl FlightService for FlightServer {
 
         let db_state = if let Some(dynamic_id) = &params.dynamic_id {
             self.state
-                .get_or_create_dynamic_db_state(dynamic_id, &params.database, &params.secrets, &params.ducklakes)
+                .get_or_create_dynamic_db_state(
+                    dynamic_id, 
+                    &params.database, 
+                    &params.extensions, 
+                    &params.secrets, 
+                    &params.ducklakes
+                )
                 .await
         }
         else {
-            self.state.get_or_create_static_db_state(&params.database, &params.secrets, &params.ducklakes).await
+            self.state.get_or_create_static_db_state(
+                &params.database, 
+                &params.extensions, 
+                &params.secrets, 
+                &params.ducklakes
+            ).await
         }
         .map_err(|e| Status::internal(e.to_string()))?;
 
