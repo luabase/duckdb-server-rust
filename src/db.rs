@@ -595,7 +595,7 @@ impl ConnectionPool {
             let mut stmt = conn.prepare(&sql)?;
             _ = stmt.execute(params_from_iter(args.iter()))?;
 
-            info!("Created secret {}", secret.name);
+            info!("Created secret {} of type {}", secret.name, secret.secret_type);
         }
 
         Ok(())
