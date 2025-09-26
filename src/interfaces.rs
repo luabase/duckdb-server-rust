@@ -75,6 +75,7 @@ pub struct DucklakeConfig {
     pub data_path: String,
     pub meta_schema: Option<String>,
     pub replace: Option<bool>,
+    pub settings: Option<Vec<SettingConfig>>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
@@ -89,6 +90,12 @@ pub struct SecretConfig {
     pub token: Option<String>,
     pub scope: Option<String>,
     pub replace: Option<bool>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+pub struct SettingConfig {
+    pub name: String,
+    pub value: String,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]

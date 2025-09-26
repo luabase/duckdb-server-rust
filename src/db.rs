@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::log::info;
 
 use crate::constants::AUTOINSTALL_QUERY;
-use crate::interfaces::{AppError, DucklakeConfig, Extension, SecretConfig, SqlValue};
+use crate::interfaces::{AppError, DucklakeConfig, Extension, SecretConfig, SettingConfig, SqlValue};
 use crate::sql::{enforce_query_limit, is_writable_sql};
 
 #[async_trait]
@@ -538,6 +538,13 @@ impl ConnectionPool {
         (query, params)
     }
 
+    fn build_set_setting_query(setting_config: &SettingConfig) -> (String, Vec<Box<dyn ToSql>>) {
+        let query = String::from(format!("SET {} = ?", setting_config.name));
+        let mut params: Vec<Box<dyn ToSql>> = Vec::new();
+        params.push(Box::new(setting_config.value.clone()));
+        (query, params)
+    }
+
     fn load_extensions(conn: &duckdb::Connection, extensions: &[Extension]) -> Result<()> {
         if extensions.is_empty() {
             info!("No extensions to load");
@@ -733,6 +740,14 @@ impl ConnectionPool {
             let (sql, args) = Self::build_attach_ducklake_query(ducklake);
             let mut stmt = conn.prepare(&sql)?;
             _ = stmt.execute(params_from_iter(args.iter()))?;
+            
+            if let Some(settings) = &ducklake.settings {
+                for setting in settings {
+                    let (sql, args) = Self::build_set_setting_query(setting);
+                    let mut stmt = conn.prepare(&sql)?;
+                    _ = stmt.execute(params_from_iter(args.iter()))?;
+                }
+            }
 
             info!("Attached ducklake {}", ducklake.alias);
         }
