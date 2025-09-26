@@ -193,10 +193,10 @@ impl IntoResponse for QueryResponse {
 
 #[derive(Debug)]
 pub enum AppError {
-    Error(anyhow::Error),
     BadRequest(anyhow::Error),
     RetriesExceeded(anyhow::Error),
     Timeout,
+    Error(anyhow::Error),
 }
 
 impl IntoResponse for AppError {
