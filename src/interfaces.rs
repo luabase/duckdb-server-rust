@@ -195,12 +195,16 @@ impl IntoResponse for QueryResponse {
 pub enum AppError {
     Error(anyhow::Error),
     BadRequest(anyhow::Error),
+    RetriesExceeded(anyhow::Error),
     Timeout,
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         match self {
+            AppError::BadRequest(error) => (StatusCode::BAD_REQUEST, format!("Bad request: {error}")).into_response(),
+            AppError::RetriesExceeded(error) => (StatusCode::SERVICE_UNAVAILABLE, format!("Retries exceeded: {error}")).into_response(),
+            AppError::Timeout => (StatusCode::REQUEST_TIMEOUT).into_response(),
             AppError::Error(error) => {
                 tracing::error!("Error: {:?}", error);
                 (
@@ -209,8 +213,6 @@ impl IntoResponse for AppError {
                 )
                     .into_response()
             }
-            AppError::BadRequest(error) => (StatusCode::BAD_REQUEST, format!("Bad request: {error}")).into_response(),
-            AppError::Timeout => (StatusCode::REQUEST_TIMEOUT).into_response(),
         }
     }
 }
@@ -218,9 +220,10 @@ impl IntoResponse for AppError {
 impl fmt::Display for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AppError::Error(err) => write!(f, "{}", err),
             AppError::BadRequest(err) => write!(f, "Bad request: {}", err),
+            AppError::RetriesExceeded(err) => write!(f, "Retries exceeded: {}", err),
             AppError::Timeout => write!(f, "Request timed out"),
+            AppError::Error(err) => write!(f, "{}", err),
         }
     }
 }

@@ -60,6 +60,8 @@ where
                         else {
                             tracing::error!("Max retries exceeded for DuckDB failure: {}", err);
                         }
+
+                        return Err(AppError::RetriesExceeded(err));
                     }
                 }
 

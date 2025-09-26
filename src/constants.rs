@@ -32,13 +32,13 @@ pub const AUTOINSTALL_QUERY: &[&str] = &[
 ];
 
 pub const RETRIABLE_ERRORS: &[&str] = &[
+    "database has been invalidated",
+    "failed to attach ducklake metadata",
     "stale file handle",
     "write-write conflict",
-    "database has been invalidated",
-    "failed to attach ducklake metadata"
 ];
 
 pub const TIMEOUT_ERRORS: &[&str] = &[
-    "timeout",
     "connection pool timeout",
+    "timeout",
 ];
