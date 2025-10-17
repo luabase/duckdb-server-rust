@@ -20,6 +20,15 @@ use crate::state::AppState;
 const PANIC_EXIT_CODE: i32 = 101;
 const APPLICATION_ERROR_EXIT_CODE: i32 = 1;
 
+fn log_panic_entry(message: &str, data: serde_json::Value) {
+    let log_entry = serde_json::json!({
+        "severity": "CRITICAL",
+        "message": message,
+        "data": data
+    });
+    eprintln!("{}", log_entry);
+}
+
 mod app;
 mod auth;
 mod cache;
@@ -138,71 +147,47 @@ fn main() {
     std::panic::set_hook(Box::new(|panic_info| {
         let backtrace = std::backtrace::Backtrace::capture();
 
-        let panic_data = serde_json::json!({
-            "severity": "CRITICAL",
-            "message": "PANIC DETECTED",
+        log_panic_entry("PANIC DETECTED", serde_json::json!({
             "panic_info": panic_info.to_string()
-        });
-        eprintln!("{}", panic_data);
+        }));
 
         if let Some(location) = panic_info.location() {
-            let location_data = serde_json::json!({
-                "severity": "CRITICAL",
-                "message": "PANIC LOCATION",
+            log_panic_entry("PANIC LOCATION", serde_json::json!({
                 "file": location.file(),
                 "line": location.line(),
                 "column": location.column()
-            });
-            eprintln!("{}", location_data);
+            }));
         }
 
         if let Some(payload) = panic_info.payload().downcast_ref::<&str>() {
-            let payload_data = serde_json::json!({
-                "severity": "CRITICAL",
-                "message": "PANIC PAYLOAD",
+            log_panic_entry("PANIC PAYLOAD", serde_json::json!({
                 "payload": payload
-            });
-            eprintln!("{}", payload_data);
+            }));
         }
 
-        let backtrace_data = serde_json::json!({
-            "severity": "CRITICAL",
-            "message": "STACK TRACE",
+        log_panic_entry("STACK TRACE", serde_json::json!({
             "backtrace": backtrace.to_string()
-        });
-        eprintln!("{}", backtrace_data);
+        }));
 
         let rust_backtrace = std::env::var("RUST_BACKTRACE").unwrap_or_else(|_| "not set".to_string());
-        let context_data = serde_json::json!({
-            "severity": "CRITICAL",
-            "message": "RUST_BACKTRACE_ENABLED",
+        log_panic_entry("RUST_BACKTRACE_ENABLED", serde_json::json!({
             "value": rust_backtrace
-        });
-        eprintln!("{}", context_data);
+        }));
 
         let rust_backtrace_full = std::env::var("RUST_BACKTRACE_FULL").unwrap_or_else(|_| "not set".to_string());
-        let full_backtrace_data = serde_json::json!({
-            "severity": "CRITICAL",
-            "message": "RUST_BACKTRACE_FULL_ENABLED",
+        log_panic_entry("RUST_BACKTRACE_FULL_ENABLED", serde_json::json!({
             "value": rust_backtrace_full
-        });
-        eprintln!("{}", full_backtrace_data);
+        }));
 
         // Log additional environment information for debugging
         let rust_log = std::env::var("RUST_LOG").unwrap_or_else(|_| "not set".to_string());
-        let log_data = serde_json::json!({
-            "severity": "CRITICAL",
-            "message": "RUST_LOG_LEVEL",
+        log_panic_entry("RUST_LOG_LEVEL", serde_json::json!({
             "value": rust_log
-        });
-        eprintln!("{}", log_data);
+        }));
 
-        let exit_data = serde_json::json!({
-            "severity": "CRITICAL",
-            "message": "APPLICATION EXITING DUE TO PANIC",
+        log_panic_entry("APPLICATION EXITING DUE TO PANIC", serde_json::json!({
             "exit_code": PANIC_EXIT_CODE
-        });
-        eprintln!("{}", exit_data);
+        }));
 
         std::process::exit(PANIC_EXIT_CODE);
     }));

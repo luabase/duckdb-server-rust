@@ -229,10 +229,10 @@ impl ConnectionPool {
         let conn = pool.get()?;
 
         match conn.execute("checkpoint", []) {
-            Ok(_) => tracing::info!("Database connection pool created successfully"),
+            Ok(_) => tracing::info!("Database {} checkpoint validation successful", db_path),
             Err(e) => {
-                tracing::error!("Database validation failed: {}", e);
-                return Err(anyhow::anyhow!("Database validation error: {}", e));
+                tracing::error!("Database {} checkpoint validation failed: {}", db_path, e);
+                return Err(anyhow::anyhow!("Database {} checkpoint validation error: {}", db_path, e));
             }
         }
 
