@@ -133,29 +133,63 @@ fn parse_db_dynamic_roots(s: &str) -> Result<(String, Vec<String>, String), Stri
 
 fn main() {
     std::panic::set_hook(Box::new(|panic_info| {
-        // Capture detailed stack trace for Google Cloud Error Reporting
         let backtrace = std::backtrace::Backtrace::capture();
 
-        // Structured logging for Google Cloud Error Reporting
-        eprintln!("{{\"severity\":\"CRITICAL\",\"message\":\"PANIC DETECTED\",\"panic_info\":\"{}\"}}", panic_info);
+        let panic_data = serde_json::json!({
+            "severity": "CRITICAL",
+            "message": "PANIC DETECTED",
+            "panic_info": panic_info.to_string()
+        });
+        eprintln!("{}", panic_data);
 
         if let Some(location) = panic_info.location() {
-            eprintln!("{{\"severity\":\"CRITICAL\",\"message\":\"PANIC LOCATION\",\"file\":\"{}\",\"line\":{},\"column\":{}}}",
-                     location.file(), location.line(), location.column());
+            let location_data = serde_json::json!({
+                "severity": "CRITICAL",
+                "message": "PANIC LOCATION",
+                "file": location.file(),
+                "line": location.line(),
+                "column": location.column()
+            });
+            eprintln!("{}", location_data);
         }
 
         if let Some(payload) = panic_info.payload().downcast_ref::<&str>() {
-            eprintln!("{{\"severity\":\"CRITICAL\",\"message\":\"PANIC PAYLOAD\",\"payload\":\"{}\"}}", payload);
+            let payload_data = serde_json::json!({
+                "severity": "CRITICAL",
+                "message": "PANIC PAYLOAD",
+                "payload": payload
+            });
+            eprintln!("{}", payload_data);
         }
 
-        // Log the full stack trace
-        eprintln!("{{\"severity\":\"CRITICAL\",\"message\":\"STACK TRACE\",\"backtrace\":\"{}\"}}", backtrace);
+        let backtrace_data = serde_json::json!({
+            "severity": "CRITICAL",
+            "message": "STACK TRACE",
+            "backtrace": backtrace.to_string()
+        });
+        eprintln!("{}", backtrace_data);
 
-        // Log additional context for better error reporting
-        eprintln!("{{\"severity\":\"CRITICAL\",\"message\":\"RUST_BACKTRACE_ENABLED\",\"value\":\"true\"}}");
-        eprintln!("{{\"severity\":\"CRITICAL\",\"message\":\"RUST_BACKTRACE_FULL_ENABLED\",\"value\":\"true\"}}");
+        let context_data = serde_json::json!({
+            "severity": "CRITICAL",
+            "message": "RUST_BACKTRACE_ENABLED",
+            "value": "true"
+        });
+        eprintln!("{}", context_data);
 
-        eprintln!("{{\"severity\":\"CRITICAL\",\"message\":\"APPLICATION EXITING DUE TO PANIC\",\"exit_code\":101}}");
+        let full_backtrace_data = serde_json::json!({
+            "severity": "CRITICAL",
+            "message": "RUST_BACKTRACE_FULL_ENABLED",
+            "value": "true"
+        });
+        eprintln!("{}", full_backtrace_data);
+
+        let exit_data = serde_json::json!({
+            "severity": "CRITICAL",
+            "message": "APPLICATION EXITING DUE TO PANIC",
+            "exit_code": 101
+        });
+        eprintln!("{}", exit_data);
+
         std::process::exit(101);
     }));
 
