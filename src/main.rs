@@ -12,14 +12,6 @@ use std::{
 use tokio::{net, runtime::Builder, sync::Mutex};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use libc::{signal, SIGSEGV, SIGABRT};
-
-unsafe extern "C" fn sigsegv_handler(_sig: i32) {
-    eprintln!("SEGFAULT detected! Attempting graceful shutdown...");
-    eprintln!("Stack trace would be available with debug symbols");
-    std::process::exit(139);
-}
-
 use crate::auth::create_auth_config;
 use crate::constants::*;
 use crate::interfaces::{DbDefaults, DbPath};
@@ -141,17 +133,31 @@ fn parse_db_dynamic_roots(s: &str) -> Result<(String, Vec<String>, String), Stri
 
 fn main() {
     std::panic::set_hook(Box::new(|panic_info| {
-        eprintln!("PANIC: {}", panic_info);
+        // Capture detailed stack trace for Google Cloud Error Reporting
+        let backtrace = std::backtrace::Backtrace::capture();
+
+        // Structured logging for Google Cloud Error Reporting
+        eprintln!("{{\"severity\":\"CRITICAL\",\"message\":\"PANIC DETECTED\",\"panic_info\":\"{}\"}}", panic_info);
+
         if let Some(location) = panic_info.location() {
-            eprintln!("Location: {}:{}:{}", location.file(), location.line(), location.column());
+            eprintln!("{{\"severity\":\"CRITICAL\",\"message\":\"PANIC LOCATION\",\"file\":\"{}\",\"line\":{},\"column\":{}}}",
+                     location.file(), location.line(), location.column());
         }
+
+        if let Some(payload) = panic_info.payload().downcast_ref::<&str>() {
+            eprintln!("{{\"severity\":\"CRITICAL\",\"message\":\"PANIC PAYLOAD\",\"payload\":\"{}\"}}", payload);
+        }
+
+        // Log the full stack trace
+        eprintln!("{{\"severity\":\"CRITICAL\",\"message\":\"STACK TRACE\",\"backtrace\":\"{}\"}}", backtrace);
+
+        // Log additional context for better error reporting
+        eprintln!("{{\"severity\":\"CRITICAL\",\"message\":\"RUST_BACKTRACE_ENABLED\",\"value\":\"true\"}}");
+        eprintln!("{{\"severity\":\"CRITICAL\",\"message\":\"RUST_BACKTRACE_FULL_ENABLED\",\"value\":\"true\"}}");
+
+        eprintln!("{{\"severity\":\"CRITICAL\",\"message\":\"APPLICATION EXITING DUE TO PANIC\",\"exit_code\":101}}");
         std::process::exit(101);
     }));
-
-    unsafe {
-        signal(SIGSEGV, sigsegv_handler as usize);
-        signal(SIGABRT, sigsegv_handler as usize);
-    }
 
     let c_str = unsafe { duckdb_library_version() };
     let duck_version = unsafe { std::ffi::CStr::from_ptr(c_str).to_str().unwrap() };
