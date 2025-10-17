@@ -121,12 +121,13 @@ impl ConnectionPool {
 
         let current_inode = match std::fs::metadata(&self.db_path) {
             Ok(meta) => meta.ino(),
-            Err(_) => {
-                info!("DuckDB file missing or inaccessible; attempting to rebuild pool");
+            Err(e) => {
+                tracing::error!("DuckDB file missing or inaccessible ({}); attempting to rebuild pool", e);
                 self.reset_pool(None).map_err(|e| AppError::Error(e))?;
                 let pool_guard = self.pool.read();
                 return pool_guard.get().map_err(|e| {
                     let err_str = e.to_string().to_lowercase();
+                    tracing::error!("Pool error after rebuild: {}", e);
                     if err_str.contains("timeout") {
                         AppError::Timeout
                     }
