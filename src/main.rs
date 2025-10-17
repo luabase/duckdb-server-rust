@@ -17,6 +17,9 @@ use crate::constants::*;
 use crate::interfaces::{DbDefaults, DbPath};
 use crate::state::AppState;
 
+const PANIC_EXIT_CODE: i32 = 101;
+const APPLICATION_ERROR_EXIT_CODE: i32 = 1;
+
 mod app;
 mod auth;
 mod cache;
@@ -197,11 +200,11 @@ fn main() {
         let exit_data = serde_json::json!({
             "severity": "CRITICAL",
             "message": "APPLICATION EXITING DUE TO PANIC",
-            "exit_code": 101
+            "exit_code": PANIC_EXIT_CODE
         });
         eprintln!("{}", exit_data);
 
-        std::process::exit(101);
+        std::process::exit(PANIC_EXIT_CODE);
     }));
 
     let c_str = unsafe { duckdb_library_version() };
@@ -244,7 +247,7 @@ fn main() {
                 .block_on(app_main(args))
             {
                 eprintln!("Error: {}", e);
-                std::process::exit(1);
+                std::process::exit(APPLICATION_ERROR_EXIT_CODE);
             }
         }
         Command::Version => {
