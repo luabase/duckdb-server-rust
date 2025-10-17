@@ -169,19 +169,30 @@ fn main() {
         });
         eprintln!("{}", backtrace_data);
 
+        let rust_backtrace = std::env::var("RUST_BACKTRACE").unwrap_or_else(|_| "not set".to_string());
         let context_data = serde_json::json!({
             "severity": "CRITICAL",
             "message": "RUST_BACKTRACE_ENABLED",
-            "value": "true"
+            "value": rust_backtrace
         });
         eprintln!("{}", context_data);
 
+        let rust_backtrace_full = std::env::var("RUST_BACKTRACE_FULL").unwrap_or_else(|_| "not set".to_string());
         let full_backtrace_data = serde_json::json!({
             "severity": "CRITICAL",
             "message": "RUST_BACKTRACE_FULL_ENABLED",
-            "value": "true"
+            "value": rust_backtrace_full
         });
         eprintln!("{}", full_backtrace_data);
+
+        // Log additional environment information for debugging
+        let rust_log = std::env::var("RUST_LOG").unwrap_or_else(|_| "not set".to_string());
+        let log_data = serde_json::json!({
+            "severity": "CRITICAL",
+            "message": "RUST_LOG_LEVEL",
+            "value": rust_log
+        });
+        eprintln!("{}", log_data);
 
         let exit_data = serde_json::json!({
             "severity": "CRITICAL",
