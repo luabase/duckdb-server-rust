@@ -228,6 +228,14 @@ impl ConnectionPool {
 
         let conn = pool.get()?;
 
+        match conn.execute("checkpoint", []) {
+            Ok(_) => tracing::info!("Database connection pool created successfully"),
+            Err(e) => {
+                tracing::error!("Database validation failed: {}", e);
+                return Err(anyhow::anyhow!("Database validation error: {}", e));
+            }
+        }
+
         _ = conn.execute_batch(&(AUTOINSTALL_QUERY.join(";")))?;
 
         if let Some(extensions) = extensions {
