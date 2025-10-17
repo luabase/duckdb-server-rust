@@ -36,6 +36,10 @@ pub const RETRIABLE_ERRORS: &[&str] = &[
     "failed to attach ducklake metadata",
     "stale file handle",
     "write-write conflict",
+    "database is locked",
+    "unable to open database file",
+    "lock timeout",
+    "file lock",
 ];
 
 pub const TIMEOUT_ERRORS: &[&str] = &[
