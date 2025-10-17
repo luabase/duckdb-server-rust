@@ -289,11 +289,8 @@ async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     let flight_addr = SocketAddr::new(args.address, args.grpc_port);
     let flight_state = app_state.clone();
-    std::thread::spawn(move || {
-        let flight_rt = tokio::runtime::Runtime::new().unwrap();
-        flight_rt.block_on(async move {
-            flight::serve(flight_addr, flight_state).await.unwrap();
-        });
+    tokio::spawn(async move {
+        flight::serve(flight_addr, flight_state).await.unwrap();
     });
 
     match config {
