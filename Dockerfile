@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y build-essential lld clang bash protobuf
 
 ENV CC=clang
 ENV CXX=clang++
-ENV RUSTFLAGS="-C link-arg=-fuse-ld=lld"
+ENV RUSTFLAGS="-C force-frame-pointers=yes -C debuginfo=2 -C link-arg=-fuse-ld=lld"
 
 RUN wget -O /tmp/duckdb_cli.zip https://github.com/duckdb/duckdb/releases/latest/download/duckdb_cli-linux-amd64.zip && \
     unzip /tmp/duckdb_cli.zip -d /usr/local/bin/ && \
@@ -37,6 +37,10 @@ RUN echo "root hard nofile 65535" >> /etc/security/limits.d/custom.conf
 
 RUN echo "ulimit -n 65535" >> ~/.bashrc
 
-EXPOSE 3000
+ENV RUST_BACKTRACE=1
+ENV RUST_BACKTRACE_FULL=1
+ENV RUST_LOG=info,duckdb_server=debug
+
+EXPOSE 3000 3030
 
 CMD ["bash", "-c", "ulimit -n 65535 && exec systemfd --no-pid -s http::0.0.0.0:3000 -- duckdb-server serve $DUCKDB_ARGS"]
