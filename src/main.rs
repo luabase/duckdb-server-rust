@@ -93,11 +93,11 @@ struct Args {
     /// Connection pool timeout in seconds
     #[arg(long, default_value_t = 10)]
     pool_timeout: u64,
-    
+
     /// Enable authentication
     #[arg(long)]
     service_auth_enabled: bool,
-    
+
     /// Authentication token
     #[arg(long)]
     service_auth_token: Option<String>,
@@ -246,16 +246,16 @@ async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     let auth_config = if args.service_auth_enabled {
         tracing::info!("Authentication is enabled");
-        
+
         let token = args.service_auth_token.or_else(|| std::env::var("SERVICE_AUTH_TOKEN").ok());
-        
+
         if token.is_none() {
             return Err(anyhow::anyhow!(
                 "Authentication is enabled but no token provided. Use --service-auth-token or set \
                 SERVICE_AUTH_TOKEN environment variable."
             ).into());
         }
-        
+
         Some(create_auth_config(
             true,
             token,

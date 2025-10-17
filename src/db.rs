@@ -79,10 +79,10 @@ pub struct ConnectionPool {
 
 impl ConnectionPool {
     pub fn new(
-        db_path: &str, 
-        pool_size: u32, 
-        timeout: Duration, 
-        access_mode: AccessMode, 
+        db_path: &str,
+        pool_size: u32,
+        timeout: Duration,
+        access_mode: AccessMode,
         extensions: &Option<Vec<Extension>>,
         secrets: &Option<Vec<SecretConfig>>,
         ducklakes: &Option<Vec<DucklakeConfig>>,
@@ -94,13 +94,13 @@ impl ConnectionPool {
 
         let inode = std::fs::metadata(db_path)?.ino();
         let pool = Self::create_pool(
-            db_path, 
-            pool_size, 
-            timeout, 
-            &access_mode, 
+            db_path,
+            pool_size,
+            timeout,
+            &access_mode,
             &extensions,
             &secrets,
-            &ducklakes, 
+            &ducklakes,
         )?;
 
         Ok(Self {
@@ -182,11 +182,11 @@ impl ConnectionPool {
         let extensions = self.extensions.read();
         let secrets = self.secrets.read();
         let ducklakes = self.ducklakes.read();
-        
+
         let new_pool = Self::create_pool(
-            &self.db_path, 
-            self.pool_size, 
-            self.timeout, 
+            &self.db_path,
+            self.pool_size,
+            self.timeout,
             &self.access_mode,
             &*extensions,
             &*secrets,
@@ -414,7 +414,7 @@ impl Database for Arc<ConnectionPool> {
         let extensions_owned = extensions.clone();
         let secrets_owned = secrets.clone();
         let ducklakes_owned = ducklakes.clone();
-        
+
         let result = tokio::select! {
             result = tokio::task::spawn_blocking({
                 let cancel_token = cancel_token.clone();
@@ -554,7 +554,7 @@ impl ConnectionPool {
         let existing_extensions: Vec<_> = conn.prepare("SELECT extension_name, loaded, installed FROM duckdb_extensions()")?
             .query_arrow([])?
             .collect();
-        
+
         let mut extension_map: std::collections::HashMap<String, (bool, bool)> = std::collections::HashMap::new();
         for batch in existing_extensions {
             let names = Self::extract_string_column(&batch, 0, "extension_name")?;
@@ -562,7 +562,7 @@ impl ConnectionPool {
                 .ok_or_else(|| anyhow::anyhow!("Expected BooleanArray for loaded column"))?;
             let installed_array = batch.column(2).as_any().downcast_ref::<arrow::array::BooleanArray>()
                 .ok_or_else(|| anyhow::anyhow!("Expected BooleanArray for installed column"))?;
-            
+
             for (i, name) in names.into_iter().enumerate() {
                 let loaded = loaded_array.value(i);
                 let installed = installed_array.value(i);
@@ -573,7 +573,7 @@ impl ConnectionPool {
         let mut commands = Vec::new();
         for ext in extensions {
             let (loaded, installed) = extension_map.get(&ext.name).copied().unwrap_or((false, false));
-            
+
             if !installed {
                 let install_sql = if let Some(source) = &ext.source {
                     info!("Installing extension {} from source {}", ext.name, source);
@@ -602,11 +602,11 @@ impl ConnectionPool {
 
     fn merge_secrets(existing: &Option<Vec<SecretConfig>>, incoming: &[SecretConfig]) -> Vec<SecretConfig> {
         let mut merged = existing.clone().unwrap_or_default();
-        
+
         for incoming_secret in incoming {
             let replace = incoming_secret.replace.unwrap_or(false);
             let existing_index = merged.iter().position(|s| s.name == incoming_secret.name);
-            
+
             match existing_index {
                 Some(idx) if replace => {
                     merged[idx] = incoming_secret.clone();
@@ -619,17 +619,17 @@ impl ConnectionPool {
                 }
             }
         }
-        
+
         merged
     }
 
     fn merge_ducklakes(existing: &Option<Vec<DucklakeConfig>>, incoming: &[DucklakeConfig]) -> Vec<DucklakeConfig> {
         let mut merged = existing.clone().unwrap_or_default();
-        
+
         for incoming_ducklake in incoming {
             let replace = incoming_ducklake.replace.unwrap_or(false);
             let existing_index = merged.iter().position(|d| d.alias == incoming_ducklake.alias);
-            
+
             match existing_index {
                 Some(idx) if replace => {
                     merged[idx] = incoming_ducklake.clone();
@@ -642,16 +642,16 @@ impl ConnectionPool {
                 }
             }
         }
-        
+
         merged
     }
 
     fn merge_extensions(existing: &Option<Vec<Extension>>, incoming: &[Extension]) -> Vec<Extension> {
         let mut merged = existing.clone().unwrap_or_default();
-        
+
         for incoming_extension in incoming {
             let existing_index = merged.iter().position(|e| e.name == incoming_extension.name);
-            
+
             match existing_index {
                 Some(idx) => {
                     merged[idx] = incoming_extension.clone();
@@ -661,19 +661,19 @@ impl ConnectionPool {
                 }
             }
         }
-        
+
         merged
     }
 
     fn extract_string_column(batch: &arrow::record_batch::RecordBatch, column_index: usize, column_name: &str) -> Result<Vec<String>> {
         let string_array = batch.column(column_index).as_any().downcast_ref::<arrow::array::StringArray>()
             .ok_or_else(|| anyhow::anyhow!("Expected StringArray for {} column", column_name))?;
-        
+
         let result = string_array.iter()
             .map(|opt| opt.unwrap_or("").to_string())
             .collect();
         Ok(result)
-        
+
     }
 
     fn setup_and_merge_configs(
@@ -732,15 +732,15 @@ impl ConnectionPool {
 
         for ducklake in ducklakes {
             let already_attached = attached_names.contains(&ducklake.alias);
-            
+
             if already_attached && !ducklake.replace.unwrap_or(false) {
                 continue;
             }
-            
+
             let (sql, args) = Self::build_attach_ducklake_query(ducklake);
             let mut stmt = conn.prepare(&sql)?;
             _ = stmt.execute(params_from_iter(args.iter()))?;
-            
+
             if let Some(settings) = &ducklake.settings {
                 for setting in settings {
                     let (sql, args) = Self::build_set_setting_query(setting);
