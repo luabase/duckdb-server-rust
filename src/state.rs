@@ -42,28 +42,11 @@ impl AppState {
             return Ok(Arc::clone(state));
         }
 
-        let path = PathBuf::from(&self.root).join(database);
-        if path.exists() {
-            tracing::info!(
-                "Creating DuckDB connection with path: {}, pool size: {}, access_mode: {}, timeout: {}",
-                path.display(),
-                self.defaults.connection_pool_size,
-                self.defaults.access_mode,
-                self.defaults.pool_timeout
-            );
-        }
-        else {
-            return Err(AppError::BadRequest(anyhow::anyhow!(
-                "Database {} not found at root: {}",
-                database,
-                self.root
-            )));
-        }
-
+        let db_type = self.resolve_db_type(database)?;
         let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
 
         let db = ConnectionPool::new(
-            DbType::File(path.to_str().unwrap().to_string()),
+            db_type,
             self.defaults.connection_pool_size,
             Duration::from_secs(self.defaults.pool_timeout),
             access_mode,
@@ -81,6 +64,38 @@ impl AppState {
 
         states.insert(database.to_string(), Arc::clone(&new_state));
         Ok(new_state)
+    }
+
+    fn resolve_db_type(&self, database: &str) -> Result<DbType, AppError> {
+        if database.starts_with(":memory:") {
+            tracing::info!(
+                "Creating in-memory DuckDB connection with id: {}, pool size: {}, access_mode: {}, timeout: {}",
+                database,
+                self.defaults.connection_pool_size,
+                self.defaults.access_mode,
+                self.defaults.pool_timeout
+            );
+            return Ok(DbType::Memory(database.to_string()));
+        }
+
+        let path = PathBuf::from(&self.root).join(database);
+        if path.exists() {
+            tracing::info!(
+                "Creating DuckDB connection with path: {}, pool size: {}, access_mode: {}, timeout: {}",
+                path.display(),
+                self.defaults.connection_pool_size,
+                self.defaults.access_mode,
+                self.defaults.pool_timeout
+            );
+            Ok(DbType::File(path.to_str().unwrap().to_string()))
+        }
+        else {
+            Err(AppError::BadRequest(anyhow::anyhow!(
+                "Database {} not found at root: {}",
+                database,
+                self.root
+            )))
+        }
     }
 
     pub async fn reconnect_db(&self, database: &str) -> Result<(), AppError> {

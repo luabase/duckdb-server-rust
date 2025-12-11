@@ -175,7 +175,7 @@ impl ConnectionPool {
 
         let manager = match db {
             DbType::File(path) => DuckdbConnectionManager::file_with_flags(path, config)?,
-            DbType::Memory(_) => DuckdbConnectionManager::memory_with_flags(config)?,
+            DbType::Memory(id) => DuckdbConnectionManager::file_with_flags(id, config)?,
         };
         let pool = r2d2::Pool::builder()
             .max_size(pool_size)
