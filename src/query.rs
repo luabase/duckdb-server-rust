@@ -52,7 +52,7 @@ where
                             sleep(delay).await;
 
                             state
-                                .reconnect_db(params.dynamic_id.as_deref(), &params.database)
+                                .reconnect_db(&params.database)
                                 .await?;
 
                             continue;
@@ -79,45 +79,31 @@ pub async fn handle(state: &AppState, params: &QueryParams) -> Result<QueryRespo
     }
 
     if params.create.unwrap_or(false) {
-        if let Some(dynamic_id) = params.dynamic_id.as_deref() {
-            state.create_database_if_not_exists(dynamic_id, &params.database).await?;
+        state.create_database_if_not_exists(&params.database).await?;
 
-            if params.sql.is_none() || params.sql.as_ref().unwrap().trim().is_empty() {
-                return Ok(QueryResponse::Empty);
-            }
+        if params.sql.is_none() || params.sql.as_ref().unwrap().trim().is_empty() {
+            return Ok(QueryResponse::Empty);
         }
     }
 
     let sql = params.sql.clone().ok_or_else(|| {
         AppError::BadRequest(anyhow::anyhow!("SQL query is required"))
     })?;
-    
+
     if sql.trim().is_empty() {
         return Err(AppError::BadRequest(anyhow::anyhow!(
             "SQL query cannot be empty"
         )));
     }
 
-    let db_state = if let Some(dynamic_id) = &params.dynamic_id {
-        state
-            .get_or_create_dynamic_db_state(
-                dynamic_id, 
-                &params.database, 
-                &params.extensions,
-                &params.secrets, 
-                &params.ducklakes
-            )
-            .await?
-    }
-    else {
-        state.get_or_create_static_db_state(
-            &params.database, 
+    let db_state = state
+        .get_or_create_db_state(
+            &params.database,
             &params.extensions,
             &params.secrets,
             &params.ducklakes
         )
-        .await?
-    };
+        .await?;
 
     let (query_id, cancel_token) = state.start_query(params.database.clone(), sql.clone()).await;
 

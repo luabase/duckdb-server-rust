@@ -5,7 +5,7 @@ use dirs;
 use listenfd::ListenFd;
 use std::{
     collections::HashMap,
-    net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener},
+    net::{SocketAddr, TcpListener},
     path::PathBuf,
     sync::Arc,
 };
@@ -13,8 +13,8 @@ use tokio::{net, runtime::Builder, sync::Mutex};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::auth::create_auth_config;
-use crate::constants::*;
-use crate::interfaces::{DbDefaults, DbPath};
+use crate::constants::FULL_VERSION;
+use crate::interfaces::{Args, Cli, CliCommand, DbDefaults};
 use crate::state::AppState;
 
 const PANIC_EXIT_CODE: i32 = 101;
@@ -42,105 +42,6 @@ mod state;
 
 unsafe extern "C" {
     pub fn duckdb_library_version() -> *const std::os::raw::c_char;
-}
-
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-enum Command {
-    #[command(about = "Run the DuckDB server")]
-    Serve(Args),
-    #[command(about = "Print the DuckDB library version")]
-    Version,
-}
-
-#[derive(Parser, Debug)]
-struct Cli {
-    #[command(subcommand)]
-    command: Command,
-}
-
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct Args {
-    /// List of databases in the format `id=path`
-    #[arg(long = "db", value_parser = parse_db, num_args = 1..)]
-    db_paths: Vec<(String, String)>,
-
-    /// Dynamic databases in the format `id1,id2,id3=path`
-    #[arg(long = "db-dynamic-root", value_parser = parse_db_dynamic_roots, num_args = 1..)]
-    db_dynamic_roots: Vec<(String, Vec<String>, String)>,
-
-    /// HTTP Address
-    #[arg(short, long, default_value_t = Ipv4Addr::UNSPECIFIED.into())]
-    address: IpAddr,
-
-    /// HTTP Port
-    #[arg(short = 'p', long, default_value_t = 3000)]
-    http_port: u16,
-
-    /// gRPC Port
-    #[arg(short, long, default_value_t = 3030)]
-    grpc_port: u16,
-
-    /// Request timeout
-    #[arg(short, long, default_value_t = 60)]
-    timeout: u32,
-
-    /// Max connection pool size
-    #[arg(long)]
-    connection_pool_size: Option<u32>,
-
-    /// Max number of cache entries
-    #[arg(long, default_value_t = DEFAULT_CACHE_SIZE)]
-    cache_size: usize,
-
-    /// Database access mode
-    #[arg(long, default_value = "automatic")]
-    access_mode: String,
-
-    /// Default row limit
-    #[arg(long, default_value_t = DEFAULT_ROW_LIMIT)]
-    row_limit: usize,
-
-    /// Connection pool timeout in seconds
-    #[arg(long, default_value_t = 10)]
-    pool_timeout: u64,
-
-    /// Enable authentication
-    #[arg(long)]
-    service_auth_enabled: bool,
-
-    /// Authentication token
-    #[arg(long)]
-    service_auth_token: Option<String>,
-}
-
-fn parse_db(s: &str) -> Result<(String, String), String> {
-    let parts: Vec<&str> = s.splitn(2, '=').collect();
-    if parts.len() != 2 {
-        Err(format!("Invalid format for --db argument: {}", s))
-    }
-    else {
-        Ok((parts[0].to_string(), parts[1].to_string()))
-    }
-}
-
-fn parse_db_dynamic_roots(s: &str) -> Result<(String, Vec<String>, String), String> {
-    let parts: Vec<&str> = s.splitn(2, '=').collect();
-    if parts.len() != 2 {
-        return Err(format!("Invalid format for --db-dynamic-root argument: {}", s));
-    }
-
-    let id_parts: Vec<&str> = parts[0].split(',').collect();
-    if id_parts.is_empty() {
-        return Err(format!("At least one ID is required before '=' in argument: {}", s));
-    }
-
-    let primary_id = id_parts[0].to_string();
-    let aliases = id_parts[1..].iter().map(|&id| id.to_string()).collect();
-    let path = parts[1].to_string();
-
-    Ok((primary_id, aliases, path))
 }
 
 fn main() {
@@ -221,7 +122,7 @@ fn main() {
 
     let cli = Cli::parse();
     match cli.command {
-        Command::Serve(args) => {
+        CliCommand::Serve(args) => {
             let worker_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
             println!("Starting server with {} worker threads", worker_threads);
             if let Err(e) = Builder::new_multi_thread()
@@ -235,47 +136,14 @@ fn main() {
                 std::process::exit(APPLICATION_ERROR_EXIT_CODE);
             }
         }
-        Command::Version => {
+        CliCommand::Version => {
             // noop
         }
     }
 }
 
 async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
-    let db_args: Vec<(String, String)> = if args.db_paths.is_empty() {
-        vec![(DEFAULT_DB_ID.to_string(), DEFAULT_DB_PATH.to_string())]
-    }
-    else {
-        args.db_paths
-    };
-
-    let mut db_paths: Vec<DbPath> = db_args
-        .into_iter()
-        .map(|(id, path)| DbPath {
-            id: id.clone(),
-            primary_id: id.clone(),
-            path,
-            is_dynamic: false,
-        })
-        .collect();
-
-    for (primary_id, aliases, path) in args.db_dynamic_roots {
-        db_paths.push(DbPath {
-            id: primary_id.clone(),
-            primary_id: primary_id.clone(),
-            path: path.clone(),
-            is_dynamic: true,
-        });
-
-        for alias in aliases {
-            db_paths.push(DbPath {
-                id: alias,
-                primary_id: primary_id.clone(),
-                path: path.clone(),
-                is_dynamic: true,
-            });
-        }
-    }
+    let root = args.db_root;
 
     let parallelism = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
 
@@ -289,12 +157,12 @@ async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     let app_state = Arc::new(AppState {
         defaults: db_defaults,
-        paths: db_paths.into_iter().map(|db| (db.id.clone(), db)).collect(),
+        root: root.clone(),
         states: Mutex::new(HashMap::new()),
         running_queries: Mutex::new(HashMap::new()),
     });
 
-    tracing::info!("Loaded paths: {:?}", app_state.paths);
+    tracing::info!("Using database root: {}", root);
 
     tracing_subscriber::registry()
         .with(
@@ -336,7 +204,6 @@ async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         None => TcpListener::bind(addr)?,
     };
 
-    // TLS configuration
     let mut config = RustlsConfig::from_pem_file(
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("localhost.pem"),
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("localhost-key.pem"),
@@ -363,8 +230,6 @@ async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             );
 
             let listener = net::TcpListener::from_std(listener)?;
-
-            // Run Axum directly without tokio::spawn
             axum::serve(listener, app.into_make_service()).await?;
         }
         Ok(config) => {
