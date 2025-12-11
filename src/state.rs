@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::constants::MEMORY_DB_PATH;
 use crate::db::ConnectionPool;
-use crate::interfaces::{AppError, DbDefaults, DbPath, DbState, DucklakeConfig, Extension, SecretConfig};
+use crate::interfaces::{AppError, DbDefaults, DbState, DbType, DucklakeConfig, Extension, SecretConfig};
 
 #[derive(Clone)]
 pub struct RunningQuery {
@@ -23,44 +23,29 @@ pub struct RunningQuery {
 
 pub struct AppState {
     pub defaults: DbDefaults,
-    pub paths: HashMap<String, DbPath>,
+    pub root: String,
     pub states: Mutex<HashMap<String, Arc<DbState>>>,
     pub running_queries: Mutex<HashMap<String, RunningQuery>>,
 }
 
 impl AppState {
-    pub async fn get_or_create_dynamic_db_state(
+    pub async fn get_or_create_db_state(
         &self,
-        dynamic: &str,
         database: &str,
         extensions: &Option<Vec<Extension>>,
         secrets: &Option<Vec<SecretConfig>>,
         ducklakes: &Option<Vec<DucklakeConfig>>,
     ) -> Result<Arc<DbState>, AppError> {
-        let db_path = self
-            .paths
-            .get(dynamic)
-            .ok_or_else(|| anyhow::anyhow!("Database ID {} not found", dynamic))?;
-
-        let id = self.get_state_id(Some(dynamic), database)?;
         let mut states = self.states.lock().await;
 
-        if let Some(state) = states.get(&id) {
+        if let Some(state) = states.get(database) {
             return Ok(Arc::clone(state));
         }
 
-        if !db_path.is_dynamic {
-            return Err(AppError::BadRequest(anyhow::anyhow!(
-                "Database ID {} is a static lookup",
-                dynamic
-            )));
-        }
-
-        let path = PathBuf::from(&db_path.path).join(database);
+        let path = PathBuf::from(&self.root).join(database);
         if path.exists() {
             tracing::info!(
-                "Creating DuckDB connection with ID: {}, path: {}, pool size: {}, access_mode: {}, timeout: {}",
-                id,
+                "Creating DuckDB connection with path: {}, pool size: {}, access_mode: {}, timeout: {}",
                 path.display(),
                 self.defaults.connection_pool_size,
                 self.defaults.access_mode,
@@ -69,17 +54,16 @@ impl AppState {
         }
         else {
             return Err(AppError::BadRequest(anyhow::anyhow!(
-                "Database {} not found for ID {} (primary ID {})",
+                "Database {} not found at root: {}",
                 database,
-                dynamic,
-                db_path.primary_id
+                self.root
             )));
         }
 
         let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
 
         let db = ConnectionPool::new(
-            path.to_str().unwrap(),
+            DbType::File(path.to_str().unwrap().to_string()),
             self.defaults.connection_pool_size,
             Duration::from_secs(self.defaults.pool_timeout),
             access_mode,
@@ -95,100 +79,21 @@ impl AppState {
             cache,
         });
 
-        states.insert(id, Arc::clone(&new_state));
+        states.insert(database.to_string(), Arc::clone(&new_state));
         Ok(new_state)
     }
 
-    pub async fn get_or_create_static_db_state(
-        &self, 
-        id: &str, 
-        extensions: &Option<Vec<Extension>>,
-        secrets: &Option<Vec<SecretConfig>>, 
-        ducklakes: &Option<Vec<DucklakeConfig>>
-    ) -> Result<Arc<DbState>, AppError> {
-        let mut states = self.states.lock().await;
-
-        if let Some(state) = states.get(id) {
-            return Ok(Arc::clone(state));
-        }
-
-        let db_path = self
-            .paths
-            .get(id)
-            .ok_or_else(|| anyhow::anyhow!("Database ID {} not found", id))?;
-
-        if db_path.is_dynamic {
-            return Err(AppError::BadRequest(anyhow::anyhow!(
-                "Database ID {} is a dynamic lookup",
-                id
-            )));
-        }
-
-        let effective_pool_size = if db_path.path == MEMORY_DB_PATH {
-            1
-        }
-        else {
-            self.defaults.connection_pool_size
-        };
-
-        tracing::info!(
-            "Creating DuckDB connection with ID: {}, path: {}, pool size: {}, access_mode: {}, timeout: {}",
-            id,
-            db_path.path,
-            effective_pool_size,
-            self.defaults.access_mode,
-            self.defaults.pool_timeout
-        );
-
-        let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
-        let db = ConnectionPool::new(
-            &db_path.path,
-            effective_pool_size,
-            Duration::from_secs(self.defaults.pool_timeout),
-            access_mode,
-            extensions,
-            secrets,
-            ducklakes,
-        )?;
-
-        let cache = Mutex::new(lru::LruCache::new(self.defaults.cache_size.try_into()?));
-
-        let new_state = Arc::new(DbState {
-            db: Box::new(Arc::new(db)),
-            cache,
-        });
-
-        states.insert(id.to_string(), Arc::clone(&new_state));
-        Ok(new_state)
-    }
-
-    pub async fn reconnect_db(&self, dynamic: Option<&str>, database: &str) -> Result<(), AppError> {
-        let id = self.get_state_id(dynamic, database)?;
+    pub async fn reconnect_db(&self, database: &str) -> Result<(), AppError> {
         let states = self.states.lock().await;
 
-        if let Some(db_state) = states.get(&id) {
+        if let Some(db_state) = states.get(database) {
             db_state.db.reconnect()?;
         }
         else {
-            return Err(AppError::BadRequest(anyhow::anyhow!("Database ID {} not found", id)));
+            return Err(AppError::BadRequest(anyhow::anyhow!("Database {} not found", database)));
         }
 
         Ok(())
-    }
-
-    fn get_state_id(&self, dynamic: Option<&str>, database: &str) -> Result<String, AppError> {
-        let id = if let Some(dynamic_id) = dynamic {
-            let db_path = self
-                .paths
-                .get(dynamic_id)
-                .ok_or_else(|| anyhow::anyhow!("Database ID {} not found", dynamic_id))?;
-            format!("{}::{}", db_path.primary_id, database)
-        }
-        else {
-            database.to_string()
-        };
-
-        Ok(id)
     }
 
     fn convert_access_mode(mode: &str) -> AccessMode {
@@ -237,21 +142,12 @@ impl AppState {
         self.running_queries.lock().await.values().cloned().collect()
     }
 
-    pub async fn create_database_if_not_exists(&self, dynamic_id: &str, database: &str) -> Result<(), AppError> {
+    pub async fn create_database_if_not_exists(&self, database: &str) -> Result<(), AppError> {
         if database.trim() == MEMORY_DB_PATH {
             return Ok(());
         }
 
-        let path = if let Some(db_path) = self.paths.get(dynamic_id) {
-            if db_path.is_dynamic {
-                PathBuf::from(&db_path.path).join(database)
-            } else {
-                return Err(AppError::BadRequest(anyhow::anyhow!("Database ID {} is a static lookup", dynamic_id)));
-            }
-        } else {
-            return Err(AppError::BadRequest(anyhow::anyhow!("Database ID {} not found", dynamic_id)));
-        };
-
+        let path = PathBuf::from(&self.root).join(database);
         let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
 
         if access_mode == duckdb::AccessMode::ReadOnly {
@@ -259,7 +155,7 @@ impl AppState {
                 "Cannot create database in readonly mode"
             )));
         }
-        
+
         if !path.exists() {
             if let Some(parent) = path.parent() {
                 tokio::fs::create_dir_all(parent).await.map_err(|e| {
@@ -270,9 +166,9 @@ impl AppState {
             let conn = duckdb::Connection::open(&path).map_err(|e| {
                 AppError::Error(anyhow::anyhow!("Failed to create database {}: {}", path.display(), e))
             })?;
-            
+
             drop(conn);
-            
+
             tracing::info!("Created database file: {}", path.display());
         } else {
             tracing::debug!("Database file already exists: {}", path.display());

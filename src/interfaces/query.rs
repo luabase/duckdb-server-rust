@@ -5,32 +5,8 @@ use axum::{
 };
 use duckdb::types::ToSql;
 use serde::{Deserialize, Serialize};
-use std::fmt;
-use tokio::sync::Mutex;
 
-use crate::db::Database;
-
-#[derive(Debug, Clone)]
-pub struct DbDefaults {
-    pub access_mode: String,
-    pub cache_size: usize,
-    pub connection_pool_size: u32,
-    pub row_limit: usize,
-    pub pool_timeout: u64,
-}
-
-#[derive(Debug, Clone)]
-pub struct DbPath {
-    pub id: String,
-    pub primary_id: String,
-    pub path: String,
-    pub is_dynamic: bool,
-}
-
-pub struct DbState {
-    pub db: Box<dyn Database>,
-    pub cache: Mutex<lru::LruCache<String, Vec<u8>>>,
-}
+use super::config::{DucklakeConfig, Extension, SecretConfig};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all = "kebab-case")]
@@ -38,12 +14,6 @@ pub enum Command {
     Arrow,
     Exec,
     Json,
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct Extension {
-    pub name: String,
-    pub source: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -69,40 +39,8 @@ impl SqlValue {
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
-pub struct DucklakeConfig {
-    pub connection: String,
-    pub alias: String,
-    pub data_path: String,
-    pub meta_schema: Option<String>,
-    pub replace: Option<bool>,
-    pub settings: Option<Vec<SettingConfig>>,
-}
-
-#[derive(Deserialize, Serialize, Debug, Default, Clone)]
-pub struct SecretConfig {
-    pub name: String,
-    #[serde(rename = "type")]
-    pub secret_type: String,
-    pub key_id: Option<String>,
-    pub secret: Option<String>,
-    pub provider: Option<String>,
-    pub region: Option<String>,
-    pub token: Option<String>,
-    pub scope: Option<String>,
-    pub replace: Option<bool>,
-}
-
-#[derive(Deserialize, Serialize, Debug, Default, Clone)]
-pub struct SettingConfig {
-    pub name: String,
-    pub value: String,
-}
-
-#[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct QueryParams {
     pub database: String,
-    #[serde(rename = "dynamic")]
-    pub dynamic_id: Option<String>,
     #[serde(rename = "type")]
     pub query_type: Option<Command>,
     pub persist: Option<bool>,
@@ -188,51 +126,5 @@ impl IntoResponse for QueryResponse {
                 response
             }
         }
-    }
-}
-
-#[derive(Debug)]
-pub enum AppError {
-    BadRequest(anyhow::Error),
-    RetriesExceeded(anyhow::Error),
-    Timeout,
-    Error(anyhow::Error),
-}
-
-impl IntoResponse for AppError {
-    fn into_response(self) -> Response {
-        match self {
-            AppError::BadRequest(error) => (StatusCode::BAD_REQUEST, format!("Bad request: {error}")).into_response(),
-            AppError::RetriesExceeded(error) => (StatusCode::SERVICE_UNAVAILABLE, format!("Retries exceeded: {error}")).into_response(),
-            AppError::Timeout => (StatusCode::REQUEST_TIMEOUT).into_response(),
-            AppError::Error(error) => {
-                tracing::error!("Error: {:?}", error);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Something went wrong: {error}"),
-                )
-                    .into_response()
-            }
-        }
-    }
-}
-
-impl fmt::Display for AppError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            AppError::BadRequest(err) => write!(f, "Bad request: {}", err),
-            AppError::RetriesExceeded(err) => write!(f, "Retries exceeded: {}", err),
-            AppError::Timeout => write!(f, "Request timed out"),
-            AppError::Error(err) => write!(f, "{}", err),
-        }
-    }
-}
-
-impl<E> From<E> for AppError
-where
-    E: Into<anyhow::Error>,
-{
-    fn from(err: E) -> Self {
-        AppError::Error(err.into())
     }
 }

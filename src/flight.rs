@@ -36,31 +36,20 @@ impl FlightService for FlightServer {
 
         tracing::info!("Flight QueryParams: {:?}", params);
 
-        let db_state = if let Some(dynamic_id) = &params.dynamic_id {
-            self.state
-                .get_or_create_dynamic_db_state(
-                    dynamic_id, 
-                    &params.database, 
-                    &params.extensions, 
-                    &params.secrets, 
-                    &params.ducklakes
-                )
-                .await
-        }
-        else {
-            self.state.get_or_create_static_db_state(
-                &params.database, 
-                &params.extensions, 
-                &params.secrets, 
+        let db_state = self.state
+            .get_or_create_db_state(
+                &params.database,
+                &params.extensions,
+                &params.secrets,
                 &params.ducklakes
-            ).await
-        }
-        .map_err(|e| Status::internal(e.to_string()))?;
+            )
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
 
         let sql = params
             .sql
             .ok_or_else(|| Status::invalid_argument("SQL query is required"))?;
-            
+
         if sql.trim().is_empty() {
             return Err(Status::invalid_argument("SQL query cannot be empty"));
         }
