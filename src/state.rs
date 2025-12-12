@@ -81,9 +81,14 @@ impl AppState {
 
         let path = PathBuf::from(&self.root).join(database);
         if path.exists() {
-            Ok(DbType::File(path.to_str().unwrap().to_string()))
-        }
-        else {
+            let path_str = path.to_str().ok_or_else(|| {
+                AppError::BadRequest(anyhow::anyhow!(
+                    "Database path contains invalid UTF-8: {}",
+                    path.display()
+                ))
+            })?;
+            Ok(DbType::File(path_str.to_string()))
+        } else {
             Err(AppError::BadRequest(anyhow::anyhow!(
                 "Database {} not found at root: {}",
                 database,
