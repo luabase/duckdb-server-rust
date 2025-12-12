@@ -76,7 +76,12 @@ impl AppState {
 
     fn resolve_db_type(&self, database: &str) -> Result<DbType, AppError> {
         if database.starts_with(MEMORY_DB_PATH) {
-            return Ok(DbType::Memory(database.strip_prefix(MEMORY_DB_PATH).unwrap_or(database).to_string()));
+            return Ok(DbType::Memory(
+                database
+                    .strip_prefix(MEMORY_DB_PATH)
+                    .ok_or_else(|| AppError::BadRequest(anyhow::anyhow!("Expected database id to start with {} but got {}", MEMORY_DB_PATH, database)))?
+                    .to_string())
+            );
         }
 
         let path = PathBuf::from(&self.root).join(database);
