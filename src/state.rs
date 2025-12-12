@@ -152,7 +152,7 @@ impl AppState {
     }
 
     pub async fn create_database_if_not_exists(&self, database: &str) -> Result<(), AppError> {
-        if database.trim() == MEMORY_DB_PATH {
+        if database.trim().starts_with(MEMORY_DB_PATH) {
             return Ok(());
         }
 
