@@ -162,12 +162,14 @@ async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         running_queries: Mutex::new(HashMap::new()),
     });
 
+    let fmt_layer = tracing_subscriber::fmt::layer().with_ansi(!args.no_color);
+
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "duckdb_server=debug,tower_http=debug,axum::rejection=trace".into()),
         )
-        .with(tracing_subscriber::fmt::layer())
+        .with(fmt_layer)
         .init();
 
     tracing::info!("Using database root: {}", root);
