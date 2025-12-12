@@ -5,9 +5,9 @@ use crate::constants::{DEFAULT_CACHE_SIZE, DEFAULT_ROW_LIMIT};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
-pub enum Command {
+pub enum CliCommand {
     #[command(about = "Run the DuckDB server")]
-    Serve(Args),
+    Serve(CliArgs),
     #[command(about = "Print the DuckDB library version")]
     Version,
 }
@@ -15,12 +15,12 @@ pub enum Command {
 #[derive(Parser, Debug)]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Command,
+    pub command: CliCommand,
 }
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
-pub struct Args {
+pub struct CliArgs {
     /// Database root path
     #[arg(long = "root", num_args = 1)]
     pub db_root: String,
