@@ -1,6 +1,7 @@
 use std::fmt;
 use tokio::sync::Mutex;
 
+use crate::constants::MEMORY_DB_PATH;
 use crate::db::Database;
 
 #[derive(Debug, Clone)]
@@ -27,7 +28,7 @@ impl fmt::Display for DbType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DbType::File(path) => write!(f, ":file:{}", path),
-            DbType::Memory(name) => write!(f, ":memory:{}", name),
+            DbType::Memory(name) => write!(f, "{}{}", MEMORY_DB_PATH, name),
         }
     }
 }

@@ -45,6 +45,14 @@ impl AppState {
         let db_type = self.resolve_db_type(database)?;
         let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
 
+        tracing::info!(
+            "Creating DuckDB connection: db={}, pool_size={}, access_mode={}, timeout={}",
+            db_type,
+            self.defaults.connection_pool_size,
+            self.defaults.access_mode,
+            self.defaults.pool_timeout
+        );
+
         let db = ConnectionPool::new(
             db_type,
             self.defaults.connection_pool_size,
@@ -67,26 +75,12 @@ impl AppState {
     }
 
     fn resolve_db_type(&self, database: &str) -> Result<DbType, AppError> {
-        if database.starts_with(":memory:") {
-            tracing::info!(
-                "Creating in-memory DuckDB connection with id: {}, pool size: {}, access_mode: {}, timeout: {}",
-                database,
-                self.defaults.connection_pool_size,
-                self.defaults.access_mode,
-                self.defaults.pool_timeout
-            );
-            return Ok(DbType::Memory(database.to_string()));
+        if database.starts_with(MEMORY_DB_PATH) {
+            return Ok(DbType::Memory(database.strip_prefix(MEMORY_DB_PATH).unwrap_or(database).to_string()));
         }
 
         let path = PathBuf::from(&self.root).join(database);
         if path.exists() {
-            tracing::info!(
-                "Creating DuckDB connection with path: {}, pool size: {}, access_mode: {}, timeout: {}",
-                path.display(),
-                self.defaults.connection_pool_size,
-                self.defaults.access_mode,
-                self.defaults.pool_timeout
-            );
             Ok(DbType::File(path.to_str().unwrap().to_string()))
         }
         else {

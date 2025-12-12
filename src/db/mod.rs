@@ -1,4 +1,5 @@
 mod config;
+mod instance_cache;
 mod pool;
 mod queries;
 mod traits;
