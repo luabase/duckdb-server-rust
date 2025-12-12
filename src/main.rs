@@ -162,8 +162,6 @@ async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         running_queries: Mutex::new(HashMap::new()),
     });
 
-    tracing::info!("Using database root: {}", root);
-
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -171,6 +169,8 @@ async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
+
+    tracing::info!("Using database root: {}", root);
 
     let auth_config = if args.service_auth_enabled {
         tracing::info!("Authentication is enabled");
