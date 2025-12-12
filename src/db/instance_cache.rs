@@ -70,7 +70,6 @@ impl InstanceCache {
         set_config(config, "enable_object_cache", "true");
         set_config(config, "threads", &threads.to_string());
 
-        // Get or create database from cache
         let db = {
             let cache = self.cache.lock();
 

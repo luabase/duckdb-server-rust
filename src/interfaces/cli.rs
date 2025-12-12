@@ -68,4 +68,8 @@ pub struct Args {
     /// Authentication token
     #[arg(long)]
     pub service_auth_token: Option<String>,
+
+    /// Disable ANSI colors in log output
+    #[arg(long)]
+    pub no_color: bool,
 }
