@@ -2,7 +2,7 @@ use anyhow::Result;
 use axum::{
     Router,
     extract::{Path, Query, State},
-    http::{HeaderValue, Method, header::HeaderName},
+    http::{HeaderValue, Method, StatusCode, header::HeaderName},
     response::Json,
     routing::{delete, get},
 };
@@ -231,7 +231,7 @@ pub async fn app(app_state: Arc<AppState>, timeout: u32, auth_config: Option<Aut
             .layer(cors)
             .layer(CompressionLayer::new())
             .layer(TraceLayer::new_for_http())
-            .layer(TimeoutLayer::new(Duration::from_secs(timeout.into())))
+            .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(timeout.into())))
     } else {
         Router::new()
             .route("/", get(readiness_probe))
@@ -249,7 +249,7 @@ pub async fn app(app_state: Arc<AppState>, timeout: u32, auth_config: Option<Aut
             .layer(cors)
             .layer(CompressionLayer::new())
             .layer(TraceLayer::new_for_http())
-            .layer(TimeoutLayer::new(Duration::from_secs(timeout.into())))
+            .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(timeout.into())))
     };
 
     Ok(router)

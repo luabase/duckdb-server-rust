@@ -14,7 +14,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::auth::create_auth_config;
 use crate::constants::FULL_VERSION;
-use crate::interfaces::{Args, Cli, CliCommand, DbDefaults};
+use crate::interfaces::{CliArgs, Cli, CliCommand, DbDefaults};
 use crate::state::AppState;
 
 const PANIC_EXIT_CODE: i32 = 101;
@@ -142,7 +142,7 @@ fn main() {
     }
 }
 
-async fn app_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
+async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
     let root = args.db_root;
 
     let parallelism = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);

@@ -4,7 +4,8 @@ mod db;
 mod error;
 mod query;
 
-pub use cli::{Args, Cli, Command as CliCommand};
+#[allow(unused_imports)]
+pub use cli::{CliArgs, Cli, CliCommand};
 pub use config::{DucklakeConfig, Extension, SecretConfig, SettingConfig};
 pub use db::{DbDefaults, DbState, DbType};
 pub use error::AppError;
