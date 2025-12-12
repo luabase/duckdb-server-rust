@@ -1,5 +1,5 @@
 use anyhow::Result;
-use duckdb::{AccessMode, Config, DuckdbConnectionManager};
+use duckdb::{AccessMode, Config, Connection, DuckdbConnectionManager};
 use std::os::unix::fs::MetadataExt;
 use std::time::Duration;
 use tracing::log::info;
@@ -8,14 +8,61 @@ use crate::constants::AUTOINSTALL_QUERY;
 use crate::interfaces::{AppError, DbType, DucklakeConfig, Extension, SecretConfig};
 
 use super::config::{load_extensions, setup_ducklakes, setup_secrets};
+use super::instance_cache::CachedConnectionManager;
 use super::traits::PoolStatus;
+
+pub(crate) enum PoolType {
+    File(r2d2::Pool<DuckdbConnectionManager>),
+    Memory(r2d2::Pool<CachedConnectionManager>),
+}
+
+impl PoolType {
+    fn get(&self) -> Result<PooledConnection, r2d2::Error> {
+        match self {
+            PoolType::File(pool) => pool.get().map(PooledConnection::File),
+            PoolType::Memory(pool) => pool.get().map(PooledConnection::Memory),
+        }
+    }
+
+    fn state(&self) -> r2d2::State {
+        match self {
+            PoolType::File(pool) => pool.state(),
+            PoolType::Memory(pool) => pool.state(),
+        }
+    }
+}
+
+pub enum PooledConnection {
+    File(r2d2::PooledConnection<DuckdbConnectionManager>),
+    Memory(r2d2::PooledConnection<CachedConnectionManager>),
+}
+
+impl std::ops::Deref for PooledConnection {
+    type Target = Connection;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            PooledConnection::File(conn) => conn,
+            PooledConnection::Memory(conn) => conn,
+        }
+    }
+}
+
+impl std::ops::DerefMut for PooledConnection {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            PooledConnection::File(conn) => conn,
+            PooledConnection::Memory(conn) => conn,
+        }
+    }
+}
 
 pub struct ConnectionPool {
     pub(crate) db: DbType,
     pub(crate) pool_size: u32,
     pub(crate) timeout: Duration,
     pub(crate) access_mode: AccessMode,
-    pub(crate) pool: parking_lot::RwLock<r2d2::Pool<DuckdbConnectionManager>>,
+    pub(crate) pool: parking_lot::RwLock<PoolType>,
     pub(crate) inode: parking_lot::RwLock<Option<u64>>,
     pub(crate) extensions: parking_lot::RwLock<Option<Vec<Extension>>>,
     pub(crate) secrets: parking_lot::RwLock<Option<Vec<SecretConfig>>>,
@@ -65,7 +112,7 @@ impl ConnectionPool {
         })
     }
 
-    pub fn get(&self) -> Result<r2d2::PooledConnection<DuckdbConnectionManager>, AppError> {
+    pub fn get(&self) -> Result<PooledConnection, AppError> {
         info!("Checking out connection from pool: db={}", self.db);
 
         if let DbType::File(path) = &self.db {
@@ -130,7 +177,7 @@ impl ConnectionPool {
         Ok(())
     }
 
-    pub(crate) fn reset_pool_internal(&self) -> Result<(r2d2::Pool<DuckdbConnectionManager>, Option<u64>)> {
+    pub(crate) fn reset_pool_internal(&self) -> Result<(PoolType, Option<u64>)> {
         let extensions = self.extensions.read();
         let secrets = self.secrets.read();
         let ducklakes = self.ducklakes.read();
@@ -161,55 +208,79 @@ impl ConnectionPool {
         extensions: &Option<Vec<Extension>>,
         secrets: &Option<Vec<SecretConfig>>,
         ducklakes: &Option<Vec<DucklakeConfig>>,
-    ) -> Result<r2d2::Pool<DuckdbConnectionManager>> {
-        let config = Config::default()
-            .access_mode(match access_mode {
-                AccessMode::ReadOnly => AccessMode::ReadOnly,
-                AccessMode::ReadWrite => AccessMode::ReadWrite,
-                AccessMode::Automatic => AccessMode::Automatic,
-            })?
-            .allow_unsigned_extensions()?
-            .enable_autoload_extension(true)?
-            .enable_object_cache(true)?
-            .threads(pool_size as i64)?;
+    ) -> Result<PoolType> {
+        match db {
+            DbType::File(path) => {
+                let config = Config::default()
+                    .access_mode(match access_mode {
+                        AccessMode::ReadOnly => AccessMode::ReadOnly,
+                        AccessMode::ReadWrite => AccessMode::ReadWrite,
+                        AccessMode::Automatic => AccessMode::Automatic,
+                    })?
+                    .allow_unsigned_extensions()?
+                    .enable_autoload_extension(true)?
+                    .enable_object_cache(true)?
+                    .threads(pool_size as i64)?;
 
-        let manager = match db {
-            DbType::File(path) => DuckdbConnectionManager::file_with_flags(path, config)?,
-            DbType::Memory(id) => DuckdbConnectionManager::file_with_flags(id, config)?,
-        };
-        let pool = r2d2::Pool::builder()
-            .max_size(pool_size)
-            .min_idle(Some(1))
-            .connection_timeout(timeout)
-            .build(manager)?;
+                let manager = DuckdbConnectionManager::file_with_flags(path, config)?;
+                let pool = r2d2::Pool::builder()
+                    .max_size(pool_size)
+                    .min_idle(Some(1))
+                    .connection_timeout(timeout)
+                    .build(manager)?;
 
-        let conn = pool.get()?;
+                let conn = pool.get()?;
 
-        if let DbType::File(_) = db {
-            match conn.execute("checkpoint", []) {
-                Ok(_) => tracing::info!("Database {} checkpoint validation successful", db),
-                Err(e) => {
-                    tracing::error!("Database {} checkpoint validation failed: {}", db, e);
-                    return Err(anyhow::anyhow!("Database {} checkpoint validation error: {}", db, e));
+                match conn.execute("checkpoint", []) {
+                    Ok(_) => tracing::info!("Database {} checkpoint validation successful", db),
+                    Err(e) => {
+                        tracing::error!("Database {} checkpoint validation failed: {}", db, e);
+                        return Err(anyhow::anyhow!("Database {} checkpoint validation error: {}", db, e));
+                    }
                 }
+
+                Self::init_connection(&conn, extensions, secrets, ducklakes)?;
+                Ok(PoolType::File(pool))
+            }
+            DbType::Memory(id) => {
+                tracing::info!("Creating in-memory DuckDB connection with id: {} using instance cache", id);
+                let path = format!(":memory:{}", id);
+                let manager = CachedConnectionManager::new(path, access_mode.clone(), pool_size);
+
+                let pool = r2d2::Pool::builder()
+                    .max_size(pool_size)
+                    .min_idle(Some(1))
+                    .connection_timeout(timeout)
+                    .build(manager)?;
+
+                let conn = pool.get()?;
+                Self::init_connection(&conn, extensions, secrets, ducklakes)?;
+                Ok(PoolType::Memory(pool))
             }
         }
+    }
 
+    fn init_connection(
+        conn: &Connection,
+        extensions: &Option<Vec<Extension>>,
+        secrets: &Option<Vec<SecretConfig>>,
+        ducklakes: &Option<Vec<DucklakeConfig>>,
+    ) -> Result<()> {
         _ = conn.execute_batch(&(AUTOINSTALL_QUERY.join(";")))?;
 
         if let Some(extensions) = extensions {
-            load_extensions(&conn, extensions)?;
+            load_extensions(conn, extensions)?;
         }
 
         if let Some(secrets) = secrets {
-            setup_secrets(&conn, secrets)?;
+            setup_secrets(conn, secrets)?;
         }
 
         if let Some(ducklakes) = ducklakes {
-            setup_ducklakes(&conn, ducklakes)?;
+            setup_ducklakes(conn, ducklakes)?;
         }
 
-        Ok(pool)
+        Ok(())
     }
 
     pub fn status(&self) -> Result<PoolStatus, AppError> {

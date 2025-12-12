@@ -21,6 +21,7 @@ axum-server-dual-protocol = "0.7"
 clap = { version = "4.5", features = ["derive"] }
 dirs = "6"
 duckdb = { version = "1.4", features = ["bundled", "modern-full"] }
+libduckdb-sys = "1.4"
 futures = "0.3"
 futures-util = "0.3"
 git-version = "0.3"
