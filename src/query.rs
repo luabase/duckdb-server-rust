@@ -131,6 +131,7 @@ pub async fn handle(state: &AppState, params: &QueryParams) -> Result<QueryRespo
                         &sql,
                         &params.args,
                         &params.prepare_sql,
+                        &params.default_schema,
                         limit,
                         &params.extensions,
                         &params.secrets,
@@ -143,7 +144,7 @@ pub async fn handle(state: &AppState, params: &QueryParams) -> Result<QueryRespo
             Ok(QueryResponse::Arrow(buffer))
         }
         Some(Command::Exec) => {
-            db_state.db.execute(sql.as_str(), &params.extensions).await?;
+            db_state.db.execute(sql.as_str(), &params.default_schema, &params.extensions).await?;
             Ok(QueryResponse::Empty)
         }
         Some(Command::Json) => {
@@ -162,6 +163,7 @@ pub async fn handle(state: &AppState, params: &QueryParams) -> Result<QueryRespo
                         &sql,
                         &params.args,
                         &params.prepare_sql,
+                        &params.default_schema,
                         limit,
                         &params.extensions,
                         &params.secrets,

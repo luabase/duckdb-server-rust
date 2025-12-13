@@ -63,6 +63,7 @@ impl FlightService for FlightServer {
                 &sql,
                 &params.args,
                 &params.prepare_sql,
+                &params.default_schema,
                 limit,
                 &params.extensions,
                 &params.secrets,
