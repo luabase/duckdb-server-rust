@@ -17,11 +17,15 @@ use super::traits::{Database, PoolStatus};
 
 #[async_trait]
 impl Database for Arc<ConnectionPool> {
-    async fn execute(&self, sql: &str, extensions: &Option<Vec<Extension>>) -> Result<()> {
+    async fn execute(&self, sql: &str, default_schema: &Option<String>, extensions: &Option<Vec<Extension>>) -> Result<()> {
         let conn = self.get().map_err(|e| anyhow::anyhow!("{}", e))?;
 
         if let Some(exts) = extensions {
             load_extensions(&conn, exts)?;
+        }
+
+        if let Some(default_schema) = default_schema {
+            conn.execute_batch(&format!("USE {}", default_schema))?;
         }
 
         conn.execute_batch(sql)?;
@@ -38,6 +42,7 @@ impl Database for Arc<ConnectionPool> {
         sql: &String,
         args: &Option<Vec<SqlValue>>,
         prepare_sql: &Option<String>,
+        default_schema: &Option<String>,
         limit: usize,
         extensions: &Option<Vec<Extension>>,
         secrets: &Option<Vec<SecretConfig>>,
@@ -52,12 +57,17 @@ impl Database for Arc<ConnectionPool> {
         let extensions_owned = extensions.clone();
         let secrets_owned = secrets.clone();
         let ducklakes_owned = ducklakes.clone();
+        let default_schema_owned = default_schema.clone();
 
         let result = tokio::select! {
             result = tokio::task::spawn_blocking({
                 let cancel_token = cancel_token.clone();
                 move || -> Result<Vec<u8>> {
                     let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    if let Some(default_schema) = default_schema_owned {
+                        conn.execute_batch(&format!("USE {}", default_schema))?;
+                    }
 
                     if let Some(prepare_sql) = prepare_sql_owned {
                         conn.execute_batch(&prepare_sql)?;
@@ -104,6 +114,7 @@ impl Database for Arc<ConnectionPool> {
         sql: &String,
         args: &Option<Vec<SqlValue>>,
         prepare_sql: &Option<String>,
+        default_schema: &Option<String>,
         limit: usize,
         extensions: &Option<Vec<Extension>>,
         secrets: &Option<Vec<SecretConfig>>,
@@ -118,12 +129,17 @@ impl Database for Arc<ConnectionPool> {
         let extensions_owned = extensions.clone();
         let secrets_owned = secrets.clone();
         let ducklakes_owned = ducklakes.clone();
+        let default_schema_owned = default_schema.clone();
 
         let result = tokio::select! {
             result = tokio::task::spawn_blocking({
                 let cancel_token = cancel_token.clone();
                 move || -> Result<Vec<u8>> {
                     let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    if let Some(default_schema) = default_schema_owned {
+                        conn.execute_batch(&format!("USE {}", default_schema))?;
+                    }
 
                     if let Some(prepare_sql) = prepare_sql_owned {
                         conn.execute_batch(&prepare_sql)?;
@@ -171,6 +187,7 @@ impl Database for Arc<ConnectionPool> {
         sql: &String,
         args: &Option<Vec<SqlValue>>,
         prepare_sql: &Option<String>,
+        default_schema: &Option<String>,
         limit: usize,
         extensions: &Option<Vec<Extension>>,
         secrets: &Option<Vec<SecretConfig>>,
@@ -185,12 +202,17 @@ impl Database for Arc<ConnectionPool> {
         let extensions_owned = extensions.clone();
         let secrets_owned = secrets.clone();
         let ducklakes_owned = ducklakes.clone();
+        let default_schema_owned = default_schema.clone();
 
         let result = tokio::select! {
             result = tokio::task::spawn_blocking({
                 let cancel_token = cancel_token.clone();
                 move || -> Result<Vec<RecordBatch>> {
                     let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    if let Some(default_schema) = default_schema_owned {
+                        conn.execute_batch(&format!("USE {}", default_schema))?;
+                    }
 
                     if let Some(prepare_sql) = prepare_sql_owned {
                         conn.execute_batch(&prepare_sql)?;

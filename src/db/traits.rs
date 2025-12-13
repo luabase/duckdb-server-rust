@@ -8,12 +8,17 @@ use crate::interfaces::{AppError, DucklakeConfig, Extension, SecretConfig, SqlVa
 
 #[async_trait]
 pub trait Database: Send + Sync {
-    async fn execute(&self, sql: &str, extensions: &Option<Vec<Extension>>) -> Result<()>;
+    async fn execute(
+        &self, sql: &str,
+        default_schema: &Option<String>,
+        extensions: &Option<Vec<Extension>>
+    ) -> Result<()>;
     async fn get_json(
         &self,
         sql: &String,
         args: &Option<Vec<SqlValue>>,
         prepare_sql: &Option<String>,
+        default_schema: &Option<String>,
         limit: usize,
         extensions: &Option<Vec<Extension>>,
         secrets: &Option<Vec<SecretConfig>>,
@@ -25,6 +30,7 @@ pub trait Database: Send + Sync {
         sql: &String,
         args: &Option<Vec<SqlValue>>,
         prepare_sql: &Option<String>,
+        default_schema: &Option<String>,
         limit: usize,
         extensions: &Option<Vec<Extension>>,
         secrets: &Option<Vec<SecretConfig>>,
@@ -36,6 +42,7 @@ pub trait Database: Send + Sync {
         sql: &String,
         args: &Option<Vec<SqlValue>>,
         prepare_sql: &Option<String>,
+        default_schema: &Option<String>,
         limit: usize,
         extensions: &Option<Vec<Extension>>,
         secrets: &Option<Vec<SecretConfig>>,
