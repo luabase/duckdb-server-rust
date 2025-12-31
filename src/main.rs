@@ -49,38 +49,50 @@ unsafe extern "C" {
 
 #[cfg(target_os = "linux")]
 async fn monitor_memory_pressure() {
+    use std::io::{Read, Seek, SeekFrom};
+
     const PSI_PATH: &str = "/proc/pressure/memory";
 
-    if std::fs::metadata(PSI_PATH).is_err() {
-        tracing::info!("Memory pressure monitoring unavailable: PSI not supported on this kernel");
-        return;
-    }
+    let mut file = match std::fs::File::open(PSI_PATH) {
+        Ok(f) => f,
+        Err(_) => {
+            tracing::info!("Memory pressure monitoring unavailable: PSI not supported on this kernel");
+            return;
+        }
+    };
 
     tracing::info!("Memory pressure monitoring enabled (PSI)");
     let mut ticker = interval(Duration::from_secs(5));
+    let mut buffer = String::with_capacity(256);
 
     loop {
         ticker.tick().await;
-        if let Ok(content) = std::fs::read_to_string(PSI_PATH) {
-            for line in content.lines() {
-                if line.starts_with("full") {
-                    if let Some(avg10) = line
-                        .split_whitespace()
-                        .find(|s| s.starts_with("avg10="))
-                        .and_then(|s| s.strip_prefix("avg10="))
-                        .and_then(|s| s.parse::<f64>().ok())
-                    {
-                        if avg10 > 50.0 {
-                            tracing::error!(
-                                memory_pressure_avg10 = avg10,
-                                "Critical memory pressure detected"
-                            );
-                        } else if avg10 > 25.0 {
-                            tracing::warn!(
-                                memory_pressure_avg10 = avg10,
-                                "High memory pressure detected"
-                            );
-                        }
+        buffer.clear();
+        if file.seek(SeekFrom::Start(0)).is_err() {
+            continue;
+        }
+        if file.read_to_string(&mut buffer).is_err() {
+            continue;
+        }
+
+        for line in buffer.lines() {
+            if line.starts_with("full") {
+                if let Some(avg10) = line
+                    .split_whitespace()
+                    .find(|s| s.starts_with("avg10="))
+                    .and_then(|s| s.strip_prefix("avg10="))
+                    .and_then(|s| s.parse::<f64>().ok())
+                {
+                    if avg10 > 50.0 {
+                        tracing::error!(
+                            memory_pressure_avg10 = avg10,
+                            "Critical memory pressure detected"
+                        );
+                    } else if avg10 > 25.0 {
+                        tracing::warn!(
+                            memory_pressure_avg10 = avg10,
+                            "High memory pressure detected"
+                        );
                     }
                 }
             }
