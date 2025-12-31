@@ -329,17 +329,18 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    tokio::spawn(async {
-        match tokio::spawn(monitor_memory_pressure()).await {
-            Ok(()) => {}
-            Err(e) => tracing::error!("Memory pressure monitor task panicked: {}", e),
+    let memory_monitor_handle = tokio::spawn(monitor_memory_pressure());
+    let sigterm_handle = tokio::spawn(handle_sigterm());
+
+    tokio::spawn(async move {
+        if let Err(e) = memory_monitor_handle.await {
+            tracing::error!("Memory pressure monitor task panicked: {}", e);
         }
     });
 
-    tokio::spawn(async {
-        match tokio::spawn(handle_sigterm()).await {
-            Ok(()) => {}
-            Err(e) => tracing::error!("SIGTERM handler task panicked: {}", e),
+    tokio::spawn(async move {
+        if let Err(e) = sigterm_handle.await {
+            tracing::error!("SIGTERM handler task panicked: {}", e);
         }
     });
 
