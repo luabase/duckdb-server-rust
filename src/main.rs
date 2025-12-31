@@ -1,12 +1,10 @@
 use anyhow::Result;
-use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
 use dirs;
 use listenfd::ListenFd;
 use std::{
     collections::HashMap,
     net::{SocketAddr, TcpListener},
-    path::PathBuf,
     sync::Arc,
     time::Duration,
 };
@@ -343,16 +341,6 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
         None => TcpListener::bind(addr)?,
     };
 
-    let mut config = RustlsConfig::from_pem_file(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("localhost.pem"),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("localhost-key.pem"),
-    )
-    .await;
-
-    if config.is_err() {
-        config = RustlsConfig::from_pem_file("./localhost.pem", "./localhost-key.pem").await;
-    }
-
     let flight_addr = SocketAddr::new(args.address, args.grpc_port);
     let flight_state = app_state.clone();
     tokio::spawn(async move {
@@ -371,32 +359,16 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    match config {
-        Err(_) => {
-            tracing::warn!("No keys for HTTPS found.");
-            tracing::info!(
-                "DuckDB Server listening on http://{}. Timeout is {}",
-                listener.local_addr()?,
-                args.timeout
-            );
+    tracing::info!(
+        "DuckDB Server listening on http://{}. Timeout is {}",
+        listener.local_addr()?,
+        args.timeout
+    );
 
-            let listener = net::TcpListener::from_std(listener)?;
-            axum::serve(listener, app.into_make_service())
-                .with_graceful_shutdown(shutdown_signal())
-                .await?;
-        }
-        Ok(config) => {
-            tracing::info!(
-                "DuckDB Server listening with TLS on https://{}. Timeout is {}",
-                listener.local_addr()?,
-                args.timeout
-            );
-
-            axum_server_dual_protocol::from_tcp_dual_protocol(listener, config)
-                .serve(app.into_make_service())
-                .await?;
-        }
-    }
+    let listener = net::TcpListener::from_std(listener)?;
+    axum::serve(listener, app.into_make_service())
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
 
     tracing::info!("Server shutdown complete");
 
