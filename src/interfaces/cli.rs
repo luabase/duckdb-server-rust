@@ -72,4 +72,12 @@ pub struct CliArgs {
     /// Disable ANSI colors in log output
     #[arg(long)]
     pub no_color: bool,
+
+    /// Memory pressure warning threshold (PSI avg10 percentage, 0 to disable)
+    #[arg(long, default_value_t = 25.0, env = "MEMORY_PRESSURE_WARN_THRESHOLD")]
+    pub memory_pressure_warn: f64,
+
+    /// Memory pressure critical threshold (PSI avg10 percentage, 0 to disable)
+    #[arg(long, default_value_t = 50.0, env = "MEMORY_PRESSURE_CRITICAL_THRESHOLD")]
+    pub memory_pressure_critical: f64,
 }

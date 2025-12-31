@@ -48,8 +48,13 @@ unsafe extern "C" {
 }
 
 #[cfg(target_os = "linux")]
-async fn monitor_memory_pressure() {
+async fn monitor_memory_pressure(warn_threshold: f64, critical_threshold: f64) {
     use std::io::{Read, Seek, SeekFrom};
+
+    if warn_threshold <= 0.0 && critical_threshold <= 0.0 {
+        tracing::info!("Memory pressure monitoring disabled (thresholds set to 0)");
+        return;
+    }
 
     const PSI_PATH: &str = "/proc/pressure/memory";
 
@@ -61,7 +66,11 @@ async fn monitor_memory_pressure() {
         }
     };
 
-    tracing::info!("Memory pressure monitoring enabled (PSI)");
+    tracing::info!(
+        warn_threshold = warn_threshold,
+        critical_threshold = critical_threshold,
+        "Memory pressure monitoring enabled (PSI)"
+    );
     let mut ticker = interval(Duration::from_secs(5));
     let mut buffer = String::with_capacity(256);
 
@@ -83,12 +92,12 @@ async fn monitor_memory_pressure() {
                     .and_then(|s| s.strip_prefix("avg10="))
                     .and_then(|s| s.parse::<f64>().ok())
                 {
-                    if avg10 > 50.0 {
+                    if critical_threshold > 0.0 && avg10 > critical_threshold {
                         tracing::error!(
                             memory_pressure_avg10 = avg10,
                             "Critical memory pressure detected"
                         );
-                    } else if avg10 > 25.0 {
+                    } else if warn_threshold > 0.0 && avg10 > warn_threshold {
                         tracing::warn!(
                             memory_pressure_avg10 = avg10,
                             "High memory pressure detected"
@@ -101,36 +110,40 @@ async fn monitor_memory_pressure() {
 }
 
 #[cfg(not(target_os = "linux"))]
-async fn monitor_memory_pressure() {
+async fn monitor_memory_pressure(_warn_threshold: f64, _critical_threshold: f64) {
     tracing::info!("Memory pressure monitoring unavailable: only supported on Linux with PSI");
 }
 
-#[cfg(unix)]
-async fn handle_sigterm() {
-    use tokio::signal::unix::{signal, SignalKind};
-
-    let mut sigterm = match signal(SignalKind::terminate()) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!("Failed to register SIGTERM handler: {}", e);
-            return;
-        }
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler");
     };
 
-    sigterm.recv().await;
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("Failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
 
-    tracing::error!("Received SIGTERM - possible OOM killer intervention");
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {
+            tracing::info!("Received Ctrl+C - initiating graceful shutdown");
+        }
+        _ = terminate => {
+            tracing::info!("Received SIGTERM - initiating graceful shutdown");
+        }
+    }
 
     if let Some(client) = sentry::Hub::current().client() {
         client.flush(Some(Duration::from_secs(2)));
     }
-
-    std::process::exit(137);
-}
-
-#[cfg(not(unix))]
-async fn handle_sigterm() {
-    tracing::info!("SIGTERM handler unavailable: only supported on Unix systems");
 }
 
 fn main() {
@@ -329,18 +342,13 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let memory_monitor_handle = tokio::spawn(monitor_memory_pressure());
-    let sigterm_handle = tokio::spawn(handle_sigterm());
-
+    let memory_monitor_handle = tokio::spawn(monitor_memory_pressure(
+        args.memory_pressure_warn,
+        args.memory_pressure_critical,
+    ));
     tokio::spawn(async move {
         if let Err(e) = memory_monitor_handle.await {
             tracing::error!("Memory pressure monitor task panicked: {}", e);
-        }
-    });
-
-    tokio::spawn(async move {
-        if let Err(e) = sigterm_handle.await {
-            tracing::error!("SIGTERM handler task panicked: {}", e);
         }
     });
 
@@ -354,7 +362,9 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
             );
 
             let listener = net::TcpListener::from_std(listener)?;
-            axum::serve(listener, app.into_make_service()).await?;
+            axum::serve(listener, app.into_make_service())
+                .with_graceful_shutdown(shutdown_signal())
+                .await?;
         }
         Ok(config) => {
             tracing::info!(
@@ -368,6 +378,8 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
                 .await?;
         }
     }
+
+    tracing::info!("Server shutdown complete");
 
     Ok(())
 }
