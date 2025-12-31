@@ -157,6 +157,12 @@ async fn shutdown_signal() {
     if let Some(client) = sentry::Hub::current().client() {
         client.flush(Some(Duration::from_secs(2)));
     }
+
+    tokio::spawn(async {
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        tracing::warn!("Graceful shutdown timed out after 5s, forcing exit");
+        std::process::exit(0);
+    });
 }
 
 fn main() {

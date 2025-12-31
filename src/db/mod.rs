@@ -1,5 +1,6 @@
 mod config;
 mod instance_cache;
+mod monitoring;
 mod pool;
 mod queries;
 mod traits;

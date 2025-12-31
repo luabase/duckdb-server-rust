@@ -2,7 +2,6 @@ use anyhow::Result;
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use duckdb::{params_from_iter, types::ToSql};
-use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio_util::sync::CancellationToken;
@@ -14,87 +13,9 @@ use super::config::{
     load_extensions, merge_ducklakes, merge_extensions, merge_secrets,
     setup_ducklakes, setup_secrets,
 };
+use super::monitoring::{catch_query_panic, log_query_completed};
 use super::pool::ConnectionPool;
 use super::traits::{Database, PoolStatus};
-
-fn catch_query_panic<T, F: FnOnce() -> Result<T>>(sql: &str, f: F) -> Result<T> {
-    match panic::catch_unwind(AssertUnwindSafe(f)) {
-        Ok(result) => result,
-        Err(panic_info) => {
-            let panic_msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = panic_info.downcast_ref::<String>() {
-                s.clone()
-            } else {
-                "Unknown panic".to_string()
-            };
-            tracing::error!(
-                "DuckDB panic caught!\nQuery: {}\nPanic: {}",
-                sql,
-                panic_msg
-            );
-            Err(anyhow::anyhow!("Query caused internal error: {}", panic_msg))
-        }
-    }
-}
-
-fn get_duckdb_memory_bytes(conn: &duckdb::Connection) -> i64 {
-    conn.prepare("SELECT sum(memory_usage_bytes) FROM duckdb_memory()")
-        .and_then(|mut stmt| {
-            stmt.query_row([], |row| row.get::<_, i64>(0))
-        })
-        .unwrap_or(0)
-}
-
-#[cfg(target_os = "linux")]
-fn get_process_memory_mb() -> u64 {
-    std::fs::read_to_string("/proc/self/status")
-        .ok()
-        .and_then(|content| {
-            content
-                .lines()
-                .find(|line| line.starts_with("VmRSS:"))
-                .and_then(|line| {
-                    line.split_whitespace()
-                        .nth(1)
-                        .and_then(|s| s.parse::<u64>().ok())
-                })
-        })
-        .map(|kb| kb / 1024)
-        .unwrap_or(0)
-}
-
-#[cfg(target_os = "macos")]
-fn get_process_memory_mb() -> u64 {
-    use mach2::kern_return::KERN_SUCCESS;
-    use mach2::task::task_info;
-    use mach2::task_info::{mach_task_basic_info, MACH_TASK_BASIC_INFO, MACH_TASK_BASIC_INFO_COUNT};
-    use mach2::traps::mach_task_self;
-    use std::mem::MaybeUninit;
-
-    unsafe {
-        let mut info = MaybeUninit::<mach_task_basic_info>::uninit();
-        let mut count = MACH_TASK_BASIC_INFO_COUNT;
-
-        let result = task_info(
-            mach_task_self(),
-            MACH_TASK_BASIC_INFO,
-            info.as_mut_ptr() as *mut _,
-            &mut count,
-        );
-
-        if result == KERN_SUCCESS {
-            info.assume_init().resident_size / (1024 * 1024)
-        } else {
-            0
-        }
-    }
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn get_process_memory_mb() -> u64 {
-    0
-}
 
 #[async_trait]
 impl Database for Arc<ConnectionPool> {
@@ -178,17 +99,7 @@ impl Database for Arc<ConnectionPool> {
                             writer.write(&batch)?;
                         }
                         writer.finish()?;
-
-                        let duration_ms = start.elapsed().as_millis() as u64;
-                        let process_memory_mb = get_process_memory_mb();
-                        let duckdb_memory_bytes = get_duckdb_memory_bytes(&conn);
-                        tracing::info!(
-                            duration_ms = duration_ms,
-                            process_memory_mb = process_memory_mb,
-                            duckdb_memory_bytes = duckdb_memory_bytes,
-                            sql = %effective_sql,
-                            "Query completed"
-                        );
+                        log_query_completed(start, &conn, &effective_sql);
 
                         Ok(writer.into_inner())
                     })
@@ -267,17 +178,7 @@ impl Database for Arc<ConnectionPool> {
                             writer.write(&batch)?;
                         }
                         writer.finish()?;
-
-                        let duration_ms = start.elapsed().as_millis() as u64;
-                        let process_memory_mb = get_process_memory_mb();
-                        let duckdb_memory_bytes = get_duckdb_memory_bytes(&conn);
-                        tracing::info!(
-                            duration_ms = duration_ms,
-                            process_memory_mb = process_memory_mb,
-                            duckdb_memory_bytes = duckdb_memory_bytes,
-                            sql = %effective_sql,
-                            "Query completed"
-                        );
+                        log_query_completed(start, &conn, &effective_sql);
 
                         Ok(buffer)
                     })
@@ -354,16 +255,7 @@ impl Database for Arc<ConnectionPool> {
                             batches.push(batch);
                         }
 
-                        let duration_ms = start.elapsed().as_millis() as u64;
-                        let process_memory_mb = get_process_memory_mb();
-                        let duckdb_memory_bytes = get_duckdb_memory_bytes(&conn);
-                        tracing::info!(
-                            duration_ms = duration_ms,
-                            process_memory_mb = process_memory_mb,
-                            duckdb_memory_bytes = duckdb_memory_bytes,
-                            sql = %effective_sql,
-                            "Query completed"
-                        );
+                        log_query_completed(start, &conn, &effective_sql);
 
                         Ok(batches)
                     })
