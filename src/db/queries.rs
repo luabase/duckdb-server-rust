@@ -145,6 +145,18 @@ impl Database for Arc<ConnectionPool> {
                             writer.write(&batch)?;
                         }
                         writer.finish()?;
+
+                        let process_memory_mb = get_process_memory_mb().unwrap_or(0);
+                        let duckdb_memory = get_duckdb_memory(&conn);
+                        tracing::info!(
+                            process_memory_mb = process_memory_mb,
+                            duckdb_memory = duckdb_memory.map(|(m, _)| m),
+                            duckdb_temp_storage = duckdb_memory.map(|(_, t)| t),
+                            sql = %effective_sql,
+                            "Query completed (process memory: {} MB)",
+                            process_memory_mb
+                        );
+
                         Ok(writer.into_inner())
                     })
                 }
@@ -220,6 +232,18 @@ impl Database for Arc<ConnectionPool> {
                             writer.write(&batch)?;
                         }
                         writer.finish()?;
+
+                        let process_memory_mb = get_process_memory_mb().unwrap_or(0);
+                        let duckdb_memory = get_duckdb_memory(&conn);
+                        tracing::info!(
+                            process_memory_mb = process_memory_mb,
+                            duckdb_memory = duckdb_memory.map(|(m, _)| m),
+                            duckdb_temp_storage = duckdb_memory.map(|(_, t)| t),
+                            sql = %effective_sql,
+                            "Query completed (process memory: {} MB)",
+                            process_memory_mb
+                        );
+
                         Ok(buffer)
                     })
                 }
