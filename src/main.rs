@@ -10,7 +10,7 @@ use std::{
     sync::Arc,
 };
 use tokio::{net, runtime::Builder, sync::Mutex};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::auth::create_auth_config;
 use crate::constants::FULL_VERSION;
@@ -176,6 +176,8 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let fmt_layer = tracing_subscriber::fmt::layer().with_ansi(!args.no_color);
+    let sentry_layer = sentry::integrations::tracing::layer()
+        .with_filter(tracing_subscriber::filter::LevelFilter::ERROR);
 
     tracing_subscriber::registry()
         .with(
@@ -183,7 +185,7 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or_else(|_| "duckdb_server=debug,tower_http=debug,axum::rejection=trace".into()),
         )
         .with(fmt_layer)
-        .with(sentry::integrations::tracing::layer())
+        .with(sentry_layer)
         .init();
 
     tracing::info!("Using database root: {}", root);
