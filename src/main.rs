@@ -397,15 +397,27 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
         args.timeout
     );
 
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel::<()>(1);
+
     let listener = net::TcpListener::from_std(listener)?;
     let server = axum::serve(listener, app.into_make_service())
-        .with_graceful_shutdown(shutdown_signal());
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            let _ = shutdown_tx.send(()).await;
+        });
 
     tokio::select! {
         result = server => {
             if let Err(e) = result {
                 tracing::error!(error = %e, "HTTP server error");
             }
+            tracing::debug!("HTTP server stopped");
+        }
+        _ = async {
+            shutdown_rx.recv().await;
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        } => {
+            tracing::warn!("HTTP server graceful shutdown timed out after 5s");
         }
     }
 
@@ -418,13 +430,13 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
             tracing::debug!("Flight server stopped");
             let _ = memory_monitor_handle.await;
             tracing::debug!("Memory pressure monitor stopped");
-        } => {
-            tracing::info!("Server shutdown complete");
-        }
-        _ = tokio::time::sleep(Duration::from_secs(5)) => {
-            tracing::warn!("Graceful shutdown timed out after 5s");
+        } => {}
+        _ = tokio::time::sleep(Duration::from_secs(2)) => {
+            tracing::warn!("Background tasks shutdown timed out");
         }
     }
+
+    tracing::info!("Server shutdown complete");
 
     Ok(())
 }
