@@ -81,12 +81,11 @@ impl Database for Arc<ConnectionPool> {
         let ducklakes_owned = ducklakes.clone();
         let default_schema_owned = default_schema.clone();
 
-        let sql_for_panic = effective_sql.clone();
         let result = tokio::select! {
             result = tokio::task::spawn_blocking({
                 let cancel_token = cancel_token.clone();
                 move || -> Result<Vec<u8>> {
-                    catch_query_panic(&sql_for_panic, || {
+                    catch_query_panic(&effective_sql, || {
                         let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
 
                         if let Some(default_schema) = default_schema_owned {
@@ -105,7 +104,7 @@ impl Database for Arc<ConnectionPool> {
                             ducklakes_owned.as_deref(),
                         )?;
 
-                        let mut stmt = conn.prepare(&sql_for_panic)?;
+                        let mut stmt = conn.prepare(&effective_sql)?;
                         let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
                         let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
 
@@ -156,12 +155,11 @@ impl Database for Arc<ConnectionPool> {
         let ducklakes_owned = ducklakes.clone();
         let default_schema_owned = default_schema.clone();
 
-        let sql_for_panic = effective_sql.clone();
         let result = tokio::select! {
             result = tokio::task::spawn_blocking({
                 let cancel_token = cancel_token.clone();
                 move || -> Result<Vec<u8>> {
-                    catch_query_panic(&sql_for_panic, || {
+                    catch_query_panic(&effective_sql, || {
                         let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
 
                         if let Some(default_schema) = default_schema_owned {
@@ -180,7 +178,7 @@ impl Database for Arc<ConnectionPool> {
                             ducklakes_owned.as_deref(),
                         )?;
 
-                        let mut stmt = conn.prepare(&sql_for_panic)?;
+                        let mut stmt = conn.prepare(&effective_sql)?;
                         let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
                         let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
 
@@ -232,12 +230,11 @@ impl Database for Arc<ConnectionPool> {
         let ducklakes_owned = ducklakes.clone();
         let default_schema_owned = default_schema.clone();
 
-        let sql_for_panic = effective_sql.clone();
         let result = tokio::select! {
             result = tokio::task::spawn_blocking({
                 let cancel_token = cancel_token.clone();
                 move || -> Result<Vec<RecordBatch>> {
-                    catch_query_panic(&sql_for_panic, || {
+                    catch_query_panic(&effective_sql, || {
                         let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
 
                         if let Some(default_schema) = default_schema_owned {
@@ -256,7 +253,7 @@ impl Database for Arc<ConnectionPool> {
                             ducklakes_owned.as_deref(),
                         )?;
 
-                        let mut stmt = conn.prepare(&sql_for_panic)?;
+                        let mut stmt = conn.prepare(&effective_sql)?;
                         let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
                         let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
 
