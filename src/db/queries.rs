@@ -37,19 +37,16 @@ fn catch_query_panic<T, F: FnOnce() -> Result<T>>(sql: &str, f: F) -> Result<T> 
     }
 }
 
-fn get_duckdb_memory(conn: &duckdb::Connection) -> Option<(i64, i64)> {
-    let mut stmt = conn.prepare("SELECT memory_usage, temporary_storage FROM pragma_database_size()").ok()?;
-    let mut rows = stmt.query([]).ok()?;
-    if let Some(row) = rows.next().ok()? {
-        let memory_usage: i64 = row.get(0).ok()?;
-        let temp_storage: i64 = row.get(1).ok()?;
-        Some((memory_usage, temp_storage))
-    } else {
-        None
-    }
+fn get_duckdb_memory_bytes(conn: &duckdb::Connection) -> i64 {
+    conn.prepare("SELECT sum(memory_usage_bytes) FROM duckdb_memory()")
+        .and_then(|mut stmt| {
+            stmt.query_row([], |row| row.get::<_, i64>(0))
+        })
+        .unwrap_or(0)
 }
 
-fn get_process_memory_mb() -> Option<u64> {
+#[cfg(target_os = "linux")]
+fn get_process_memory_mb() -> u64 {
     std::fs::read_to_string("/proc/self/status")
         .ok()
         .and_then(|content| {
@@ -63,6 +60,50 @@ fn get_process_memory_mb() -> Option<u64> {
                 })
         })
         .map(|kb| kb / 1024)
+        .unwrap_or(0)
+}
+
+#[cfg(target_os = "macos")]
+fn get_process_memory_mb() -> u64 {
+    use mach2::kern_return::KERN_SUCCESS;
+    use mach2::task::task_info;
+    use mach2::task_info::MACH_TASK_BASIC_INFO;
+    use mach2::traps::mach_task_self;
+    use std::mem::{MaybeUninit, size_of};
+
+    #[repr(C)]
+    struct MachTaskBasicInfo {
+        virtual_size: u64,
+        resident_size: u64,
+        resident_size_max: u64,
+        user_time: libc::time_value_t,
+        system_time: libc::time_value_t,
+        policy: i32,
+        suspend_count: i32,
+    }
+
+    unsafe {
+        let mut info = MaybeUninit::<MachTaskBasicInfo>::uninit();
+        let mut count = (size_of::<MachTaskBasicInfo>() / size_of::<i32>()) as u32;
+
+        let result = task_info(
+            mach_task_self(),
+            MACH_TASK_BASIC_INFO,
+            info.as_mut_ptr() as *mut _,
+            &mut count,
+        );
+
+        if result == KERN_SUCCESS {
+            info.assume_init().resident_size / (1024 * 1024)
+        } else {
+            0
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn get_process_memory_mb() -> u64 {
+    0
 }
 
 #[async_trait]
@@ -146,15 +187,13 @@ impl Database for Arc<ConnectionPool> {
                         }
                         writer.finish()?;
 
-                        let process_memory_mb = get_process_memory_mb().unwrap_or(0);
-                        let duckdb_memory = get_duckdb_memory(&conn);
+                        let process_memory_mb = get_process_memory_mb();
+                        let duckdb_memory_bytes = get_duckdb_memory_bytes(&conn);
                         tracing::info!(
                             process_memory_mb = process_memory_mb,
-                            duckdb_memory = duckdb_memory.map(|(m, _)| m),
-                            duckdb_temp_storage = duckdb_memory.map(|(_, t)| t),
+                            duckdb_memory_bytes = duckdb_memory_bytes,
                             sql = %effective_sql,
-                            "Query completed",
-                            process_memory_mb
+                            "Query completed"
                         );
 
                         Ok(writer.into_inner())
@@ -233,15 +272,13 @@ impl Database for Arc<ConnectionPool> {
                         }
                         writer.finish()?;
 
-                        let process_memory_mb = get_process_memory_mb().unwrap_or(0);
-                        let duckdb_memory = get_duckdb_memory(&conn);
+                        let process_memory_mb = get_process_memory_mb();
+                        let duckdb_memory_bytes = get_duckdb_memory_bytes(&conn);
                         tracing::info!(
                             process_memory_mb = process_memory_mb,
-                            duckdb_memory = duckdb_memory.map(|(m, _)| m),
-                            duckdb_temp_storage = duckdb_memory.map(|(_, t)| t),
+                            duckdb_memory_bytes = duckdb_memory_bytes,
                             sql = %effective_sql,
-                            "Query completed",
-                            process_memory_mb
+                            "Query completed"
                         );
 
                         Ok(buffer)
@@ -317,15 +354,13 @@ impl Database for Arc<ConnectionPool> {
                             batches.push(batch);
                         }
 
-                        let process_memory_mb = get_process_memory_mb().unwrap_or(0);
-                        let duckdb_memory = get_duckdb_memory(&conn);
+                        let process_memory_mb = get_process_memory_mb();
+                        let duckdb_memory_bytes = get_duckdb_memory_bytes(&conn);
                         tracing::info!(
                             process_memory_mb = process_memory_mb,
-                            duckdb_memory = duckdb_memory.map(|(m, _)| m),
-                            duckdb_temp_storage = duckdb_memory.map(|(_, t)| t),
+                            duckdb_memory_bytes = duckdb_memory_bytes,
                             sql = %effective_sql,
-                            "Query completed",
-                            process_memory_mb
+                            "Query completed"
                         );
 
                         Ok(batches)
