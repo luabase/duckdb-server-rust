@@ -8,7 +8,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tokio::{net, runtime::Builder, sync::Mutex};
+use tokio::{net, runtime::Builder, sync::{Mutex, watch}};
 #[cfg(target_os = "linux")]
 use tokio::time::interval;
 use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
@@ -144,7 +144,7 @@ async fn monitor_memory_pressure(_warn_threshold: f64, _critical_threshold: f64)
     tracing::info!("Memory pressure monitoring unavailable: only supported on Linux with PSI");
 }
 
-async fn shutdown_signal() {
+async fn shutdown_signal(shutdown_complete_rx: watch::Receiver<bool>) {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
@@ -175,10 +175,16 @@ async fn shutdown_signal() {
         client.flush(Some(Duration::from_secs(2)));
     }
 
-    tokio::spawn(async {
-        tokio::time::sleep(Duration::from_secs(5)).await;
-        tracing::warn!("Graceful shutdown timed out after 5s, forcing exit");
-        std::process::exit(0);
+    let mut rx = shutdown_complete_rx;
+    tokio::spawn(async move {
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(5)) => {
+                tracing::warn!("Graceful shutdown timed out after 5s, forcing exit");
+                std::process::exit(0);
+            }
+            _ = rx.changed() => {
+            }
+        }
     });
 }
 
@@ -384,11 +390,14 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
         args.timeout
     );
 
+    let (shutdown_complete_tx, shutdown_complete_rx) = watch::channel(false);
+
     let listener = net::TcpListener::from_std(listener)?;
     axum::serve(listener, app.into_make_service())
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(shutdown_signal(shutdown_complete_rx))
         .await?;
 
+    let _ = shutdown_complete_tx.send(true);
     tracing::info!("Server shutdown complete");
 
     Ok(())
