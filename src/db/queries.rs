@@ -153,7 +153,7 @@ impl Database for Arc<ConnectionPool> {
                             duckdb_memory = duckdb_memory.map(|(m, _)| m),
                             duckdb_temp_storage = duckdb_memory.map(|(_, t)| t),
                             sql = %effective_sql,
-                            "Query completed (process memory: {} MB)",
+                            "Query completed",
                             process_memory_mb
                         );
 
@@ -240,7 +240,7 @@ impl Database for Arc<ConnectionPool> {
                             duckdb_memory = duckdb_memory.map(|(m, _)| m),
                             duckdb_temp_storage = duckdb_memory.map(|(_, t)| t),
                             sql = %effective_sql,
-                            "Query completed (process memory: {} MB)",
+                            "Query completed",
                             process_memory_mb
                         );
 
@@ -324,7 +324,7 @@ impl Database for Arc<ConnectionPool> {
                             duckdb_memory = duckdb_memory.map(|(m, _)| m),
                             duckdb_temp_storage = duckdb_memory.map(|(_, t)| t),
                             sql = %effective_sql,
-                            "Query completed (process memory: {} MB)",
+                            "Query completed",
                             process_memory_mb
                         );
 
