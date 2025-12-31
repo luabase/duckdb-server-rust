@@ -1,4 +1,11 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
+
+static LOG_DUCKDB_MEMORY: AtomicBool = AtomicBool::new(false);
+
+pub fn set_log_duckdb_memory(enabled: bool) {
+    LOG_DUCKDB_MEMORY.store(enabled, Ordering::Relaxed);
+}
 
 pub fn catch_query_panic<T, F: FnOnce() -> anyhow::Result<T>>(sql: &str, f: F) -> anyhow::Result<T> {
     use std::panic::{self, AssertUnwindSafe};
@@ -34,14 +41,24 @@ pub fn get_duckdb_memory_mb(conn: &duckdb::Connection) -> i64 {
 pub fn log_query_completed(start: Instant, conn: &duckdb::Connection, sql: &str) {
     let duration_ms = start.elapsed().as_millis() as u64;
     let process_memory_mb = get_process_memory_mb();
-    let duckdb_memory_mb = get_duckdb_memory_mb(conn);
-    tracing::info!(
-        duration_ms = duration_ms,
-        process_memory_mb = process_memory_mb,
-        duckdb_memory_mb = duckdb_memory_mb,
-        sql = %sql,
-        "Query completed"
-    );
+
+    if LOG_DUCKDB_MEMORY.load(Ordering::Relaxed) {
+        let duckdb_memory_mb = get_duckdb_memory_mb(conn);
+        tracing::info!(
+            duration_ms = duration_ms,
+            process_memory_mb = process_memory_mb,
+            duckdb_memory_mb = duckdb_memory_mb,
+            sql = %sql,
+            "Query completed"
+        );
+    } else {
+        tracing::info!(
+            duration_ms = duration_ms,
+            process_memory_mb = process_memory_mb,
+            sql = %sql,
+            "Query completed"
+        );
+    }
 }
 
 #[cfg(target_os = "linux")]

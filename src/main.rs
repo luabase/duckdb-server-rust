@@ -54,6 +54,19 @@ async fn monitor_memory_pressure(warn_threshold: f64, critical_threshold: f64) {
         return;
     }
 
+    if warn_threshold < 0.0 || warn_threshold > 100.0 {
+        tracing::warn!(
+            warn_threshold = warn_threshold,
+            "Memory pressure warn threshold outside typical 0-100 range"
+        );
+    }
+    if critical_threshold < 0.0 || critical_threshold > 100.0 {
+        tracing::warn!(
+            critical_threshold = critical_threshold,
+            "Memory pressure critical threshold outside typical 0-100 range"
+        );
+    }
+
     const PSI_PATH: &str = "/proc/pressure/memory";
 
     let mut file = match std::fs::File::open(PSI_PATH) {
@@ -67,7 +80,7 @@ async fn monitor_memory_pressure(warn_threshold: f64, critical_threshold: f64) {
     tracing::info!(
         warn_threshold = warn_threshold,
         critical_threshold = critical_threshold,
-        "Memory pressure monitoring enabled (PSI)"
+        "Memory pressure monitoring enabled (PSI avg10: percentage of time stalled)"
     );
     let mut ticker = interval(Duration::from_secs(5));
     let mut buffer = String::with_capacity(256);
@@ -309,6 +322,11 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::info!("Using database root: {}", root);
 
+    if args.log_query_memory {
+        db::monitoring::set_log_duckdb_memory(true);
+        tracing::info!("DuckDB memory logging enabled for queries");
+    }
+
     let auth_config = if args.service_auth_enabled {
         tracing::info!("Authentication is enabled");
 
@@ -349,15 +367,10 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let memory_monitor_handle = tokio::spawn(monitor_memory_pressure(
+    tokio::spawn(monitor_memory_pressure(
         args.memory_pressure_warn,
         args.memory_pressure_critical,
     ));
-    tokio::spawn(async move {
-        if let Err(e) = memory_monitor_handle.await {
-            tracing::error!("Memory pressure monitor task panicked: {}", e);
-        }
-    });
 
     tracing::info!(
         "DuckDB Server listening on http://{}. Timeout is {}",
