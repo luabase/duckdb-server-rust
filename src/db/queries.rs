@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use duckdb::{params_from_iter, types::ToSql};
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use crate::interfaces::{AppError, DucklakeConfig, Extension, SecretConfig, SqlValue};
@@ -173,6 +174,8 @@ impl Database for Arc<ConnectionPool> {
                             ducklakes_owned.as_deref(),
                         )?;
 
+                        let start = Instant::now();
+
                         let mut stmt = conn.prepare(&effective_sql)?;
                         let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
                         let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
@@ -187,9 +190,11 @@ impl Database for Arc<ConnectionPool> {
                         }
                         writer.finish()?;
 
+                        let duration_ms = start.elapsed().as_millis() as u64;
                         let process_memory_mb = get_process_memory_mb();
                         let duckdb_memory_bytes = get_duckdb_memory_bytes(&conn);
                         tracing::info!(
+                            duration_ms = duration_ms,
                             process_memory_mb = process_memory_mb,
                             duckdb_memory_bytes = duckdb_memory_bytes,
                             sql = %effective_sql,
@@ -257,6 +262,8 @@ impl Database for Arc<ConnectionPool> {
                             ducklakes_owned.as_deref(),
                         )?;
 
+                        let start = Instant::now();
+
                         let mut stmt = conn.prepare(&effective_sql)?;
                         let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
                         let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
@@ -272,9 +279,11 @@ impl Database for Arc<ConnectionPool> {
                         }
                         writer.finish()?;
 
+                        let duration_ms = start.elapsed().as_millis() as u64;
                         let process_memory_mb = get_process_memory_mb();
                         let duckdb_memory_bytes = get_duckdb_memory_bytes(&conn);
                         tracing::info!(
+                            duration_ms = duration_ms,
                             process_memory_mb = process_memory_mb,
                             duckdb_memory_bytes = duckdb_memory_bytes,
                             sql = %effective_sql,
@@ -342,6 +351,8 @@ impl Database for Arc<ConnectionPool> {
                             ducklakes_owned.as_deref(),
                         )?;
 
+                        let start = Instant::now();
+
                         let mut stmt = conn.prepare(&effective_sql)?;
                         let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
                         let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
@@ -354,9 +365,11 @@ impl Database for Arc<ConnectionPool> {
                             batches.push(batch);
                         }
 
+                        let duration_ms = start.elapsed().as_millis() as u64;
                         let process_memory_mb = get_process_memory_mb();
                         let duckdb_memory_bytes = get_duckdb_memory_bytes(&conn);
                         tracing::info!(
+                            duration_ms = duration_ms,
                             process_memory_mb = process_memory_mb,
                             duckdb_memory_bytes = duckdb_memory_bytes,
                             sql = %effective_sql,
