@@ -73,16 +73,29 @@ async fn monitor_memory_pressure(warn_threshold: f64, critical_threshold: f64) {
     );
     let mut ticker = interval(Duration::from_secs(5));
     let mut buffer = String::with_capacity(256);
+    let mut consecutive_failures: u32 = 0;
+    const FAILURE_LOG_INTERVAL: u32 = 12;
 
     loop {
         ticker.tick().await;
         buffer.clear();
-        if file.seek(SeekFrom::Start(0)).is_err() {
+
+        let read_ok = file.seek(SeekFrom::Start(0)).is_ok()
+            && file.read_to_string(&mut buffer).is_ok();
+
+        if !read_ok {
+            consecutive_failures += 1;
+            if consecutive_failures == FAILURE_LOG_INTERVAL {
+                tracing::warn!(
+                    consecutive_failures = consecutive_failures,
+                    "Failed to read memory pressure info - monitoring may be impaired"
+                );
+                consecutive_failures = 0;
+            }
             continue;
         }
-        if file.read_to_string(&mut buffer).is_err() {
-            continue;
-        }
+
+        consecutive_failures = 0;
 
         for line in buffer.lines() {
             if line.starts_with("full") {
