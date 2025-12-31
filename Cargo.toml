@@ -18,7 +18,7 @@ chrono = "0.4.40"
 axum = { version = "0.8", features = ["http1", "http2", "ws", "json", "tokio", "tracing", "macros"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 axum-server-dual-protocol = "0.7"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "env"] }
 dirs = "6"
 duckdb = { version = "1.4", features = ["bundled", "modern-full"] }
 libduckdb-sys = "1.4"
