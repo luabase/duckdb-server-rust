@@ -3,6 +3,7 @@ use std::time::Instant;
 
 static LOG_DUCKDB_MEMORY: AtomicBool = AtomicBool::new(false);
 
+#[allow(dead_code)]
 pub fn set_log_duckdb_memory(enabled: bool) {
     LOG_DUCKDB_MEMORY.store(enabled, Ordering::Relaxed);
 }
