@@ -374,10 +374,12 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
         None => TcpListener::bind(addr)?,
     };
 
+    let flight_cancel = tokio_util::sync::CancellationToken::new();
     let flight_addr = SocketAddr::new(args.address, args.grpc_port);
     let flight_state = app_state.clone();
-    tokio::spawn(async move {
-        if let Err(e) = flight::serve(flight_addr, flight_state).await {
+    let flight_cancel_clone = flight_cancel.clone();
+    let flight_handle = tokio::spawn(async move {
+        if let Err(e) = flight::serve(flight_addr, flight_state, flight_cancel_clone).await {
             tracing::error!("Flight server failed: {}", e);
         }
     });
@@ -395,32 +397,27 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
         args.timeout
     );
 
-    let timeout_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>> = Arc::new(Mutex::new(None));
-    let timeout_handle_clone = timeout_handle.clone();
-
     let listener = net::TcpListener::from_std(listener)?;
     let server = axum::serve(listener, app.into_make_service())
         .with_graceful_shutdown(async move {
             shutdown_signal().await;
-            let handle = tokio::spawn(async {
+            flight_cancel.cancel();
+            memory_monitor_cancel.cancel();
+            tokio::spawn(async {
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 tracing::warn!("Graceful shutdown timed out after 5s, forcing exit");
                 std::process::exit(0);
             });
-            *timeout_handle_clone.lock().await = Some(handle);
         });
 
     server.await?;
 
-    if let Some(handle) = timeout_handle.lock().await.take() {
-        handle.abort();
-        tracing::debug!("Shutdown timeout cancelled - graceful shutdown completed");
-    }
+    let _ = flight_handle.await;
+    tracing::debug!("Flight server stopped");
 
-    memory_monitor_cancel.cancel();
     let _ = memory_monitor_handle.await;
-
     tracing::debug!("Memory pressure monitor stopped");
+
     tracing::info!("Server shutdown complete");
 
     Ok(())
