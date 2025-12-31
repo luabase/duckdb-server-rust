@@ -8,8 +8,9 @@ use std::{
     net::{SocketAddr, TcpListener},
     path::PathBuf,
     sync::Arc,
+    time::Duration,
 };
-use tokio::{net, runtime::Builder, sync::Mutex};
+use tokio::{net, runtime::Builder, sync::Mutex, time::interval};
 use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::auth::create_auth_config;
@@ -42,6 +43,59 @@ mod state;
 
 unsafe extern "C" {
     pub fn duckdb_library_version() -> *const std::os::raw::c_char;
+}
+
+async fn monitor_memory_pressure() {
+    let mut ticker = interval(Duration::from_secs(5));
+    loop {
+        ticker.tick().await;
+        if let Ok(content) = std::fs::read_to_string("/proc/pressure/memory") {
+            for line in content.lines() {
+                if line.starts_with("full") {
+                    if let Some(avg10) = line
+                        .split_whitespace()
+                        .find(|s| s.starts_with("avg10="))
+                        .and_then(|s| s.strip_prefix("avg10="))
+                        .and_then(|s| s.parse::<f64>().ok())
+                    {
+                        if avg10 > 50.0 {
+                            tracing::error!(
+                                memory_pressure_avg10 = avg10,
+                                "Critical memory pressure detected"
+                            );
+                        } else if avg10 > 25.0 {
+                            tracing::warn!(
+                                memory_pressure_avg10 = avg10,
+                                "High memory pressure detected"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn handle_sigterm() {
+    use tokio::signal::unix::{signal, SignalKind};
+
+    let mut sigterm = match signal(SignalKind::terminate()) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("Failed to register SIGTERM handler: {}", e);
+            return;
+        }
+    };
+
+    sigterm.recv().await;
+
+    tracing::error!("Received SIGTERM - possible OOM killer intervention");
+
+    if let Some(client) = sentry::Hub::current().client() {
+        client.flush(Some(Duration::from_secs(2)));
+    }
+
+    std::process::exit(137);
 }
 
 fn main() {
@@ -237,6 +291,9 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move {
         flight::serve(flight_addr, flight_state).await.unwrap();
     });
+
+    tokio::spawn(monitor_memory_pressure());
+    tokio::spawn(handle_sigterm());
 
     match config {
         Err(_) => {
