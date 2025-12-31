@@ -155,7 +155,11 @@ impl FlightService for FlightServer {
     }
 }
 
-pub async fn serve(addr: SocketAddr, state: Arc<AppState>) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn serve(
+    addr: SocketAddr,
+    state: Arc<AppState>,
+    cancel_token: tokio_util::sync::CancellationToken,
+) -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Starting Arrow Flight Server at {}", addr);
 
     let (health_reporter, health_service) = tonic_health::server::health_reporter();
@@ -164,8 +168,9 @@ pub async fn serve(addr: SocketAddr, state: Arc<AppState>) -> Result<(), Box<dyn
     Server::builder()
         .add_service(FlightServiceServer::new(FlightServer::new(state)))
         .add_service(health_service)
-        .serve(addr)
+        .serve_with_shutdown(addr, cancel_token.cancelled())
         .await?;
 
+    tracing::debug!("Flight server stopped");
     Ok(())
 }
