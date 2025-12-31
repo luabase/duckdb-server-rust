@@ -73,11 +73,15 @@ pub struct CliArgs {
     #[arg(long)]
     pub no_color: bool,
 
-    /// Memory pressure warning threshold (PSI avg10 percentage, 0 to disable)
+    /// Memory pressure warning threshold (PSI avg10: percentage of time stalled, typically 0-100, 0 to disable)
     #[arg(long, default_value_t = 25.0, env = "MEMORY_PRESSURE_WARN_THRESHOLD")]
     pub memory_pressure_warn: f64,
 
-    /// Memory pressure critical threshold (PSI avg10 percentage, 0 to disable)
+    /// Memory pressure critical threshold (PSI avg10: percentage of time stalled, typically 0-100, 0 to disable)
     #[arg(long, default_value_t = 50.0, env = "MEMORY_PRESSURE_CRITICAL_THRESHOLD")]
     pub memory_pressure_critical: f64,
+
+    /// Log DuckDB internal memory usage after each query (adds overhead)
+    #[arg(long, env = "LOG_QUERY_MEMORY")]
+    pub log_query_memory: bool,
 }
