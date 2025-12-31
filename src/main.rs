@@ -143,6 +143,19 @@ fn main() {
 }
 
 async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
+    let _sentry_guard = if let Ok(dsn) = std::env::var("SENTRY_DSN") {
+        println!("Initializing Sentry with DSN: {}...", &dsn[..dsn.len().min(20)]);
+        Some(sentry::init((dsn, sentry::ClientOptions {
+            release: Some((*FULL_VERSION).clone().into()),
+            traces_sample_rate: 1.0,
+            enable_logs: true,
+            send_default_pii: true,
+            ..Default::default()
+        })))
+    } else {
+        None
+    };
+
     let root = args.db_root;
 
     let parallelism = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
@@ -170,6 +183,7 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or_else(|_| "duckdb_server=debug,tower_http=debug,axum::rejection=trace".into()),
         )
         .with(fmt_layer)
+        .with(sentry::integrations::tracing::layer())
         .init();
 
     tracing::info!("Using database root: {}", root);

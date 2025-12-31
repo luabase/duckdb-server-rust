@@ -2,10 +2,12 @@ use anyhow::Result;
 use axum::{
     Router,
     extract::{Path, Query, State},
-    http::{HeaderValue, Method, StatusCode, header::HeaderName},
+    body::Body,
+    http::{HeaderValue, Method, Request, StatusCode, header::HeaderName},
     response::Json,
     routing::{delete, get},
 };
+use sentry::integrations::tower::{NewSentryLayer, SentryHttpLayer};
 use std::{sync::Arc, time::Duration};
 use tower::ServiceBuilder;
 use tower_http::{
@@ -227,6 +229,8 @@ pub async fn app(app_state: Arc<AppState>, timeout: u32, auth_config: Option<Aut
                 auth_config,
                 selective_auth_middleware,
             ))
+            .layer(SentryHttpLayer::new().enable_transaction())
+            .layer(NewSentryLayer::<Request<Body>>::new_from_top())
             .layer(header_layer)
             .layer(cors)
             .layer(CompressionLayer::new())
@@ -245,6 +249,8 @@ pub async fn app(app_state: Arc<AppState>, timeout: u32, auth_config: Option<Aut
             .route("/version", get(version_handler))
             .route("/status", get(status_handler))
             .with_state(app_state)
+            .layer(SentryHttpLayer::new().enable_transaction())
+            .layer(NewSentryLayer::<Request<Body>>::new_from_top())
             .layer(header_layer)
             .layer(cors)
             .layer(CompressionLayer::new())
