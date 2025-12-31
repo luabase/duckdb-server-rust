@@ -96,17 +96,22 @@ async fn monitor_memory_pressure(warn_threshold: f64, critical_threshold: f64) {
 
         if !read_ok {
             consecutive_failures += 1;
-            if consecutive_failures == FAILURE_LOG_INTERVAL {
+            if consecutive_failures % FAILURE_LOG_INTERVAL == 0 {
                 tracing::warn!(
                     consecutive_failures = consecutive_failures,
                     "Failed to read memory pressure info - monitoring may be impaired"
                 );
-                consecutive_failures = 0;
             }
             continue;
         }
 
-        consecutive_failures = 0;
+        if consecutive_failures > 0 {
+            tracing::info!(
+                consecutive_failures = consecutive_failures,
+                "Memory pressure monitoring recovered"
+            );
+            consecutive_failures = 0;
+        }
 
         for line in buffer.lines() {
             if line.starts_with("full") {
