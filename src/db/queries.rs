@@ -37,6 +37,34 @@ fn catch_query_panic<T, F: FnOnce() -> Result<T>>(sql: &str, f: F) -> Result<T> 
     }
 }
 
+fn get_duckdb_memory(conn: &duckdb::Connection) -> Option<(i64, i64)> {
+    let mut stmt = conn.prepare("SELECT memory_usage, temporary_storage FROM pragma_database_size()").ok()?;
+    let mut rows = stmt.query([]).ok()?;
+    if let Some(row) = rows.next().ok()? {
+        let memory_usage: i64 = row.get(0).ok()?;
+        let temp_storage: i64 = row.get(1).ok()?;
+        Some((memory_usage, temp_storage))
+    } else {
+        None
+    }
+}
+
+fn get_process_memory_mb() -> Option<u64> {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|content| {
+            content
+                .lines()
+                .find(|line| line.starts_with("VmRSS:"))
+                .and_then(|line| {
+                    line.split_whitespace()
+                        .nth(1)
+                        .and_then(|s| s.parse::<u64>().ok())
+                })
+        })
+        .map(|kb| kb / 1024)
+}
+
 #[async_trait]
 impl Database for Arc<ConnectionPool> {
     async fn execute(&self, sql: &str, default_schema: &Option<String>, extensions: &Option<Vec<Extension>>) -> Result<()> {
@@ -264,6 +292,18 @@ impl Database for Arc<ConnectionPool> {
                             }
                             batches.push(batch);
                         }
+
+                        let process_memory_mb = get_process_memory_mb().unwrap_or(0);
+                        let duckdb_memory = get_duckdb_memory(&conn);
+                        tracing::info!(
+                            process_memory_mb = process_memory_mb,
+                            duckdb_memory = duckdb_memory.map(|(m, _)| m),
+                            duckdb_temp_storage = duckdb_memory.map(|(_, t)| t),
+                            sql = %effective_sql,
+                            "Query completed (process memory: {} MB)",
+                            process_memory_mb
+                        );
+
                         Ok(batches)
                     })
                 }

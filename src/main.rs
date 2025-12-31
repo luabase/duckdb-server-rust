@@ -10,7 +10,9 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tokio::{net, runtime::Builder, sync::Mutex, time::interval};
+use tokio::{net, runtime::Builder, sync::Mutex};
+#[cfg(target_os = "linux")]
+use tokio::time::interval;
 use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::auth::create_auth_config;
@@ -45,11 +47,21 @@ unsafe extern "C" {
     pub fn duckdb_library_version() -> *const std::os::raw::c_char;
 }
 
+#[cfg(target_os = "linux")]
 async fn monitor_memory_pressure() {
+    const PSI_PATH: &str = "/proc/pressure/memory";
+
+    if std::fs::metadata(PSI_PATH).is_err() {
+        tracing::info!("Memory pressure monitoring unavailable: PSI not supported on this kernel");
+        return;
+    }
+
+    tracing::info!("Memory pressure monitoring enabled (PSI)");
     let mut ticker = interval(Duration::from_secs(5));
+
     loop {
         ticker.tick().await;
-        if let Ok(content) = std::fs::read_to_string("/proc/pressure/memory") {
+        if let Ok(content) = std::fs::read_to_string(PSI_PATH) {
             for line in content.lines() {
                 if line.starts_with("full") {
                     if let Some(avg10) = line
@@ -76,6 +88,12 @@ async fn monitor_memory_pressure() {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
+async fn monitor_memory_pressure() {
+    tracing::info!("Memory pressure monitoring unavailable: only supported on Linux with PSI");
+}
+
+#[cfg(unix)]
 async fn handle_sigterm() {
     use tokio::signal::unix::{signal, SignalKind};
 
@@ -96,6 +114,11 @@ async fn handle_sigterm() {
     }
 
     std::process::exit(137);
+}
+
+#[cfg(not(unix))]
+async fn handle_sigterm() {
+    tracing::info!("SIGTERM handler unavailable: only supported on Unix systems");
 }
 
 fn main() {
@@ -289,11 +312,24 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
     let flight_addr = SocketAddr::new(args.address, args.grpc_port);
     let flight_state = app_state.clone();
     tokio::spawn(async move {
-        flight::serve(flight_addr, flight_state).await.unwrap();
+        if let Err(e) = flight::serve(flight_addr, flight_state).await {
+            tracing::error!("Flight server failed: {}", e);
+        }
     });
 
-    tokio::spawn(monitor_memory_pressure());
-    tokio::spawn(handle_sigterm());
+    tokio::spawn(async {
+        match tokio::spawn(monitor_memory_pressure()).await {
+            Ok(()) => {}
+            Err(e) => tracing::error!("Memory pressure monitor task panicked: {}", e),
+        }
+    });
+
+    tokio::spawn(async {
+        match tokio::spawn(handle_sigterm()).await {
+            Ok(()) => {}
+            Err(e) => tracing::error!("SIGTERM handler task panicked: {}", e),
+        }
+    });
 
     match config {
         Err(_) => {
