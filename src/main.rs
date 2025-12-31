@@ -8,7 +8,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tokio::{net, runtime::Builder, sync::{Mutex, watch}};
+use tokio::{net, runtime::Builder, sync::Mutex};
 #[cfg(target_os = "linux")]
 use tokio::time::interval;
 use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
@@ -46,7 +46,11 @@ unsafe extern "C" {
 }
 
 #[cfg(target_os = "linux")]
-async fn monitor_memory_pressure(warn_threshold: f64, critical_threshold: f64) {
+async fn monitor_memory_pressure(
+    warn_threshold: f64,
+    critical_threshold: f64,
+    cancel_token: tokio_util::sync::CancellationToken,
+) {
     use std::io::{Read, Seek, SeekFrom};
 
     if warn_threshold <= 0.0 && critical_threshold <= 0.0 {
@@ -88,7 +92,14 @@ async fn monitor_memory_pressure(warn_threshold: f64, critical_threshold: f64) {
     const FAILURE_LOG_INTERVAL: u32 = 12;
 
     loop {
-        ticker.tick().await;
+        tokio::select! {
+            _ = cancel_token.cancelled() => {
+                tracing::debug!("Memory pressure monitoring stopping");
+                return;
+            }
+            _ = ticker.tick() => {}
+        }
+
         buffer.clear();
 
         let read_result = file.seek(SeekFrom::Start(0)).and_then(|_| file.read_to_string(&mut buffer));
@@ -140,11 +151,15 @@ async fn monitor_memory_pressure(warn_threshold: f64, critical_threshold: f64) {
 }
 
 #[cfg(not(target_os = "linux"))]
-async fn monitor_memory_pressure(_warn_threshold: f64, _critical_threshold: f64) {
+async fn monitor_memory_pressure(
+    _warn_threshold: f64,
+    _critical_threshold: f64,
+    _cancel_token: tokio_util::sync::CancellationToken,
+) {
     tracing::info!("Memory pressure monitoring unavailable: only supported on Linux with PSI");
 }
 
-async fn shutdown_signal(shutdown_complete_rx: watch::Receiver<bool>) {
+async fn shutdown_signal() {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
@@ -174,18 +189,6 @@ async fn shutdown_signal(shutdown_complete_rx: watch::Receiver<bool>) {
     if let Some(client) = sentry::Hub::current().client() {
         client.flush(Some(Duration::from_secs(2)));
     }
-
-    let mut rx = shutdown_complete_rx;
-    tokio::spawn(async move {
-        tokio::select! {
-            _ = tokio::time::sleep(Duration::from_secs(5)) => {
-                tracing::warn!("Graceful shutdown timed out after 5s, forcing exit");
-                std::process::exit(0);
-            }
-            _ = rx.changed() => {
-            }
-        }
-    });
 }
 
 fn main() {
@@ -379,9 +382,11 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    tokio::spawn(monitor_memory_pressure(
+    let memory_monitor_cancel = tokio_util::sync::CancellationToken::new();
+    let memory_monitor_handle = tokio::spawn(monitor_memory_pressure(
         args.memory_pressure_warn,
         args.memory_pressure_critical,
+        memory_monitor_cancel.clone(),
     ));
 
     tracing::info!(
@@ -390,14 +395,32 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
         args.timeout
     );
 
-    let (shutdown_complete_tx, shutdown_complete_rx) = watch::channel(false);
+    let timeout_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>> = Arc::new(Mutex::new(None));
+    let timeout_handle_clone = timeout_handle.clone();
 
     let listener = net::TcpListener::from_std(listener)?;
-    axum::serve(listener, app.into_make_service())
-        .with_graceful_shutdown(shutdown_signal(shutdown_complete_rx))
-        .await?;
+    let server = axum::serve(listener, app.into_make_service())
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            let handle = tokio::spawn(async {
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                tracing::warn!("Graceful shutdown timed out after 5s, forcing exit");
+                std::process::exit(0);
+            });
+            *timeout_handle_clone.lock().await = Some(handle);
+        });
 
-    let _ = shutdown_complete_tx.send(true);
+    server.await?;
+
+    if let Some(handle) = timeout_handle.lock().await.take() {
+        handle.abort();
+        tracing::debug!("Shutdown timeout cancelled - graceful shutdown completed");
+    }
+
+    memory_monitor_cancel.cancel();
+    let _ = memory_monitor_handle.await;
+
+    tracing::debug!("Memory pressure monitor stopped");
     tracing::info!("Server shutdown complete");
 
     Ok(())
