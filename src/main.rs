@@ -91,14 +91,15 @@ async fn monitor_memory_pressure(warn_threshold: f64, critical_threshold: f64) {
         ticker.tick().await;
         buffer.clear();
 
-        let read_ok = file.seek(SeekFrom::Start(0)).is_ok()
-            && file.read_to_string(&mut buffer).is_ok();
+        let read_result = file.seek(SeekFrom::Start(0)).and_then(|_| file.read_to_string(&mut buffer));
 
-        if !read_ok {
+        if let Err(e) = read_result {
             consecutive_failures += 1;
+            tracing::debug!(error = %e, "Failed to read memory pressure file");
             if consecutive_failures % FAILURE_LOG_INTERVAL == 0 {
                 tracing::warn!(
                     consecutive_failures = consecutive_failures,
+                    error = %e,
                     "Failed to read memory pressure info - monitoring may be impaired"
                 );
             }
