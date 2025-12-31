@@ -2,6 +2,7 @@ use anyhow::Result;
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use duckdb::{params_from_iter, types::ToSql};
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -14,6 +15,27 @@ use super::config::{
 };
 use super::pool::ConnectionPool;
 use super::traits::{Database, PoolStatus};
+
+fn catch_query_panic<T, F: FnOnce() -> Result<T>>(sql: &str, f: F) -> Result<T> {
+    match panic::catch_unwind(AssertUnwindSafe(f)) {
+        Ok(result) => result,
+        Err(panic_info) => {
+            let panic_msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "Unknown panic".to_string()
+            };
+            tracing::error!(
+                "DuckDB panic caught!\nQuery: {}\nPanic: {}",
+                sql,
+                panic_msg
+            );
+            Err(anyhow::anyhow!("Query caused internal error: {}", panic_msg))
+        }
+    }
+}
 
 #[async_trait]
 impl Database for Arc<ConnectionPool> {
@@ -59,42 +81,45 @@ impl Database for Arc<ConnectionPool> {
         let ducklakes_owned = ducklakes.clone();
         let default_schema_owned = default_schema.clone();
 
+        let sql_for_panic = effective_sql.clone();
         let result = tokio::select! {
             result = tokio::task::spawn_blocking({
                 let cancel_token = cancel_token.clone();
                 move || -> Result<Vec<u8>> {
-                    let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
+                    catch_query_panic(&sql_for_panic, || {
+                        let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
 
-                    if let Some(default_schema) = default_schema_owned {
-                        conn.execute_batch(&format!("USE {}", default_schema))?;
-                    }
-
-                    if let Some(prepare_sql) = prepare_sql_owned {
-                        conn.execute_batch(&prepare_sql)?;
-                    }
-
-                    setup_and_merge_configs(
-                        &conn,
-                        &pool,
-                        extensions_owned.as_deref(),
-                        secrets_owned.as_deref(),
-                        ducklakes_owned.as_deref(),
-                    )?;
-
-                    let mut stmt = conn.prepare(&effective_sql)?;
-                    let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
-                    let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
-
-                    let buf = Vec::new();
-                    let mut writer = arrow_json::ArrayWriter::new(buf);
-                    for batch in arrow {
-                        if cancel_token.is_cancelled() {
-                            return Err(anyhow::anyhow!("Query cancelled"));
+                        if let Some(default_schema) = default_schema_owned {
+                            conn.execute_batch(&format!("USE {}", default_schema))?;
                         }
-                        writer.write(&batch)?;
-                    }
-                    writer.finish()?;
-                    Ok(writer.into_inner())
+
+                        if let Some(prepare_sql) = prepare_sql_owned {
+                            conn.execute_batch(&prepare_sql)?;
+                        }
+
+                        setup_and_merge_configs(
+                            &conn,
+                            &pool,
+                            extensions_owned.as_deref(),
+                            secrets_owned.as_deref(),
+                            ducklakes_owned.as_deref(),
+                        )?;
+
+                        let mut stmt = conn.prepare(&sql_for_panic)?;
+                        let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
+                        let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
+
+                        let buf = Vec::new();
+                        let mut writer = arrow_json::ArrayWriter::new(buf);
+                        for batch in arrow {
+                            if cancel_token.is_cancelled() {
+                                return Err(anyhow::anyhow!("Query cancelled"));
+                            }
+                            writer.write(&batch)?;
+                        }
+                        writer.finish()?;
+                        Ok(writer.into_inner())
+                    })
                 }
             }) => result.map_err(|e| anyhow::anyhow!("Task error: {}", e))?,
             _ = cancel_token.cancelled() => {
@@ -131,43 +156,46 @@ impl Database for Arc<ConnectionPool> {
         let ducklakes_owned = ducklakes.clone();
         let default_schema_owned = default_schema.clone();
 
+        let sql_for_panic = effective_sql.clone();
         let result = tokio::select! {
             result = tokio::task::spawn_blocking({
                 let cancel_token = cancel_token.clone();
                 move || -> Result<Vec<u8>> {
-                    let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
+                    catch_query_panic(&sql_for_panic, || {
+                        let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
 
-                    if let Some(default_schema) = default_schema_owned {
-                        conn.execute_batch(&format!("USE {}", default_schema))?;
-                    }
-
-                    if let Some(prepare_sql) = prepare_sql_owned {
-                        conn.execute_batch(&prepare_sql)?;
-                    }
-
-                    setup_and_merge_configs(
-                        &conn,
-                        &pool,
-                        extensions_owned.as_deref(),
-                        secrets_owned.as_deref(),
-                        ducklakes_owned.as_deref(),
-                    )?;
-
-                    let mut stmt = conn.prepare(&effective_sql)?;
-                    let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
-                    let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
-
-                    let schema = arrow.get_schema();
-                    let mut buffer: Vec<u8> = Vec::new();
-                    let mut writer = arrow_ipc::writer::FileWriter::try_new(&mut buffer, schema.as_ref())?;
-                    for batch in arrow {
-                        if cancel_token.is_cancelled() {
-                            return Err(anyhow::anyhow!("Query cancelled"));
+                        if let Some(default_schema) = default_schema_owned {
+                            conn.execute_batch(&format!("USE {}", default_schema))?;
                         }
-                        writer.write(&batch)?;
-                    }
-                    writer.finish()?;
-                    Ok(buffer)
+
+                        if let Some(prepare_sql) = prepare_sql_owned {
+                            conn.execute_batch(&prepare_sql)?;
+                        }
+
+                        setup_and_merge_configs(
+                            &conn,
+                            &pool,
+                            extensions_owned.as_deref(),
+                            secrets_owned.as_deref(),
+                            ducklakes_owned.as_deref(),
+                        )?;
+
+                        let mut stmt = conn.prepare(&sql_for_panic)?;
+                        let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
+                        let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
+
+                        let schema = arrow.get_schema();
+                        let mut buffer: Vec<u8> = Vec::new();
+                        let mut writer = arrow_ipc::writer::FileWriter::try_new(&mut buffer, schema.as_ref())?;
+                        for batch in arrow {
+                            if cancel_token.is_cancelled() {
+                                return Err(anyhow::anyhow!("Query cancelled"));
+                            }
+                            writer.write(&batch)?;
+                        }
+                        writer.finish()?;
+                        Ok(buffer)
+                    })
                 }
             }) => result.map_err(|e| anyhow::anyhow!("Task error: {}", e))?,
             _ = cancel_token.cancelled() => {
@@ -204,40 +232,43 @@ impl Database for Arc<ConnectionPool> {
         let ducklakes_owned = ducklakes.clone();
         let default_schema_owned = default_schema.clone();
 
+        let sql_for_panic = effective_sql.clone();
         let result = tokio::select! {
             result = tokio::task::spawn_blocking({
                 let cancel_token = cancel_token.clone();
                 move || -> Result<Vec<RecordBatch>> {
-                    let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
+                    catch_query_panic(&sql_for_panic, || {
+                        let conn = pool.get().map_err(|e| anyhow::anyhow!("{}", e))?;
 
-                    if let Some(default_schema) = default_schema_owned {
-                        conn.execute_batch(&format!("USE {}", default_schema))?;
-                    }
-
-                    if let Some(prepare_sql) = prepare_sql_owned {
-                        conn.execute_batch(&prepare_sql)?;
-                    }
-
-                    setup_and_merge_configs(
-                        &conn,
-                        &pool,
-                        extensions_owned.as_deref(),
-                        secrets_owned.as_deref(),
-                        ducklakes_owned.as_deref(),
-                    )?;
-
-                    let mut stmt = conn.prepare(&effective_sql)?;
-                    let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
-                    let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
-
-                    let mut batches = Vec::new();
-                    for batch in arrow {
-                        if cancel_token.is_cancelled() {
-                            return Err(anyhow::anyhow!("Query cancelled"));
+                        if let Some(default_schema) = default_schema_owned {
+                            conn.execute_batch(&format!("USE {}", default_schema))?;
                         }
-                        batches.push(batch);
-                    }
-                    Ok(batches)
+
+                        if let Some(prepare_sql) = prepare_sql_owned {
+                            conn.execute_batch(&prepare_sql)?;
+                        }
+
+                        setup_and_merge_configs(
+                            &conn,
+                            &pool,
+                            extensions_owned.as_deref(),
+                            secrets_owned.as_deref(),
+                            ducklakes_owned.as_deref(),
+                        )?;
+
+                        let mut stmt = conn.prepare(&sql_for_panic)?;
+                        let tosql_args: Vec<Box<dyn ToSql>> = args.iter().map(|arg| arg.as_tosql()).collect();
+                        let arrow = stmt.query_arrow(params_from_iter(tosql_args.iter()))?;
+
+                        let mut batches = Vec::new();
+                        for batch in arrow {
+                            if cancel_token.is_cancelled() {
+                                return Err(anyhow::anyhow!("Query cancelled"));
+                            }
+                            batches.push(batch);
+                        }
+                        Ok(batches)
+                    })
                 }
             }) => result.map_err(|e| anyhow::anyhow!("Task error: {}", e))?,
             _ = cancel_token.cancelled() => {
