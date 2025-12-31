@@ -68,24 +68,13 @@ fn get_process_memory_mb() -> u64 {
 fn get_process_memory_mb() -> u64 {
     use mach2::kern_return::KERN_SUCCESS;
     use mach2::task::task_info;
-    use mach2::task_info::MACH_TASK_BASIC_INFO;
+    use mach2::task_info::{mach_task_basic_info, MACH_TASK_BASIC_INFO, MACH_TASK_BASIC_INFO_COUNT};
     use mach2::traps::mach_task_self;
-    use std::mem::{MaybeUninit, size_of};
-
-    #[repr(C)]
-    struct MachTaskBasicInfo {
-        virtual_size: u64,
-        resident_size: u64,
-        resident_size_max: u64,
-        user_time: libc::time_value_t,
-        system_time: libc::time_value_t,
-        policy: i32,
-        suspend_count: i32,
-    }
+    use std::mem::MaybeUninit;
 
     unsafe {
-        let mut info = MaybeUninit::<MachTaskBasicInfo>::uninit();
-        let mut count = (size_of::<MachTaskBasicInfo>() / size_of::<i32>()) as u32;
+        let mut info = MaybeUninit::<mach_task_basic_info>::uninit();
+        let mut count = MACH_TASK_BASIC_INFO_COUNT;
 
         let result = task_info(
             mach_task_self(),
