@@ -27,8 +27,7 @@ jobs:
         id: date
         run: |
           echo "year=$(date +%Y)" >> $GITHUB_OUTPUT
-          echo "month=$(date +%-m)" >> $GITHUB_OUTPUT
-          echo "day=$(date +%-d)" >> $GITHUB_OUTPUT
+          echo "monthday=$(date +%m%d)" >> $GITHUB_OUTPUT
 
       - name: Get version from main branch
         id: main_version
@@ -58,21 +57,19 @@ jobs:
           main_version="${{ steps.main_version.outputs.version }}"
           pr_version="${{ steps.pr_version.outputs.version }}"
           year="${{ steps.date.outputs.year }}"
-          month="${{ steps.date.outputs.month }}"
-          day="${{ steps.date.outputs.day }}"
+          monthday="${{ steps.date.outputs.monthday }}"
 
           main_year=$(echo "$main_version" | cut -d. -f1)
-          main_month=$(echo "$main_version" | cut -d. -f2)
-          main_day=$(echo "$main_version" | cut -d. -f3)
-          main_patch=$(echo "$main_version" | cut -d. -f4)
+          main_monthday=$(echo "$main_version" | cut -d. -f2)
+          main_patch=$(echo "$main_version" | cut -d. -f3)
 
-          if [ "$main_year" = "$year" ] && [ "$main_month" = "$month" ] && [ "$main_day" = "$day" ]; then
+          if [ "$main_year" = "$year" ] && [ "$main_monthday" = "$monthday" ]; then
             new_patch=$((main_patch + 1))
           else
             new_patch=0
           fi
 
-          new_version="${year}.${month}.${day}.${new_patch}"
+          new_version="${year}.${monthday}.${new_patch}"
 
           if [ "$pr_version" = "$new_version" ]; then
             echo "PR already has version $new_version, skipping"
