@@ -1,0 +1,76 @@
+name: Bump Version
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    if: github.head_ref != 'release' && !contains(github.event.pull_request.labels.*.name, 'skip-version')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get current date
+        id: date
+        run: |
+          echo "year=$(date +%Y)" >> $GITHUB_OUTPUT
+          echo "month=$(date +%-m)" >> $GITHUB_OUTPUT
+
+      - name: Get current version from Cargo.toml
+        id: current
+        run: |
+          version=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$version" >> $GITHUB_OUTPUT
+
+      - name: Calculate new CalVer version
+        id: calver
+        run: |
+          current="${{ steps.current.outputs.version }}"
+          year="${{ steps.date.outputs.year }}"
+          month="${{ steps.date.outputs.month }}"
+
+          current_year=$(echo "$current" | cut -d. -f1)
+          current_month=$(echo "$current" | cut -d. -f2)
+          current_patch=$(echo "$current" | cut -d. -f3)
+
+          if [ "$current_year" = "$year" ] && [ "$current_month" = "$month" ]; then
+            new_patch=$((current_patch + 1))
+          else
+            new_patch=0
+          fi
+
+          new_version="${year}.${month}.${new_patch}"
+          echo "version=$new_version" >> $GITHUB_OUTPUT
+          echo "New version: $new_version"
+
+      - name: Update Cargo.toml version
+        run: |
+          sed -i 's/^version = ".*"/version = "${{ steps.calver.outputs.version }}"/' Cargo.toml
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet Cargo.toml; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit version bump
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml
+          git commit -m "chore: bump version to ${{ steps.calver.outputs.version }}"
+          git push
