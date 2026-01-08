@@ -25,6 +25,7 @@ jobs:
         run: |
           echo "year=$(date +%Y)" >> $GITHUB_OUTPUT
           echo "month=$(date +%-m)" >> $GITHUB_OUTPUT
+          echo "day=$(date +%-d)" >> $GITHUB_OUTPUT
 
       - name: Get current version from Cargo.toml
         id: current
@@ -38,18 +39,20 @@ jobs:
           current="${{ steps.current.outputs.version }}"
           year="${{ steps.date.outputs.year }}"
           month="${{ steps.date.outputs.month }}"
+          day="${{ steps.date.outputs.day }}"
 
           current_year=$(echo "$current" | cut -d. -f1)
           current_month=$(echo "$current" | cut -d. -f2)
-          current_patch=$(echo "$current" | cut -d. -f3)
+          current_day=$(echo "$current" | cut -d. -f3)
+          current_patch=$(echo "$current" | cut -d. -f4)
 
-          if [ "$current_year" = "$year" ] && [ "$current_month" = "$month" ]; then
+          if [ "$current_year" = "$year" ] && [ "$current_month" = "$month" ] && [ "$current_day" = "$day" ]; then
             new_patch=$((current_patch + 1))
           else
             new_patch=0
           fi
 
-          new_version="${year}.${month}.${new_patch}"
+          new_version="${year}.${month}.${day}.${new_patch}"
           echo "version=$new_version" >> $GITHUB_OUTPUT
           echo "New version: $new_version"
 
