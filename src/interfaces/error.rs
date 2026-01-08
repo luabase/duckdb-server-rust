@@ -5,22 +5,12 @@ use axum::{
 use std::fmt;
 
 fn is_user_query_error(err_str: &str) -> bool {
-    let err_str = err_str.to_lowercase();
-    if err_str.contains("binder error") {
-        return true;
-    }
-    else if err_str.contains("catalog error") {
-        return true;
-    }
-    else if err_str.contains("parser error") {
-        return true;
-    }
-    else if err_str.contains("http get error") {
-        return true;
-    }
-    else {
-        return false;
-    }
+    let normalized = err_str.to_lowercase();
+    let normalized = normalized.trim_start();
+    normalized.starts_with("binder error")
+        || normalized.starts_with("catalog error")
+        || normalized.starts_with("parser error")
+        || normalized.starts_with("http get error")
 }
 
 #[derive(Debug)]
