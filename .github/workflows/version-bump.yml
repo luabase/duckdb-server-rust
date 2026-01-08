@@ -12,7 +12,10 @@ permissions:
 jobs:
   bump-version:
     runs-on: ubuntu-latest
-    if: github.head_ref != 'release' && !contains(github.event.pull_request.labels.*.name, 'skip-version')
+    if: |
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref != 'release' &&
+      !contains(github.event.pull_request.labels.*.name, 'skip-version')
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,6 +34,11 @@ jobs:
         id: current
         run: |
           version=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          if [ -z "$version" ]; then
+            echo "::error::Could not find version in Cargo.toml"
+            exit 1
+          fi
+          echo "Current version: $version"
           echo "version=$version" >> $GITHUB_OUTPUT
 
       - name: Calculate new CalVer version
