@@ -27,7 +27,10 @@ jobs:
         id: date
         run: |
           echo "year=$(date +%Y)" >> $GITHUB_OUTPUT
-          echo "monthday=$(date +%m%d)" >> $GITHUB_OUTPUT
+          month=$(date +%-m)
+          day=$(date +%-d)
+          monthday=$((month * 100 + day))
+          echo "monthday=$monthday" >> $GITHUB_OUTPUT
 
       - name: Get version from main branch
         id: main_version
