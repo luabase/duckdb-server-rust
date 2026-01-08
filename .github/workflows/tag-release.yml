@@ -39,14 +39,8 @@ jobs:
             echo "Tag $tag already exists"
             echo "exists=true" >> $GITHUB_OUTPUT
           else
-            exit_code=$?
-            if [ $exit_code -eq 1 ]; then
-              echo "Tag $tag does not exist, will create"
-              echo "exists=false" >> $GITHUB_OUTPUT
-            else
-              echo "::error::Failed to check tag existence (exit code: $exit_code)"
-              exit 1
-            fi
+            echo "Tag $tag does not exist, will create"
+            echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Create tag
