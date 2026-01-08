@@ -84,4 +84,8 @@ pub struct CliArgs {
     /// Log DuckDB internal memory usage after each query (adds overhead)
     #[arg(long, env = "LOG_QUERY_MEMORY")]
     pub log_query_memory: bool,
+
+    /// App environment (staging or production)
+    #[arg(long, env = "APP_ENVIRONMENT")]
+    pub app_environment: Option<String>,
 }
