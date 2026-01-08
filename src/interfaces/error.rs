@@ -4,6 +4,25 @@ use axum::{
 };
 use std::fmt;
 
+fn is_user_query_error(err_str: &str) -> bool {
+    let err_str = err_str.to_lowercase();
+    if err_str.contains("binder error") {
+        return true;
+    }
+    else if err_str.contains("catalog error") {
+        return true;
+    }
+    else if err_str.contains("parser error") {
+        return true;
+    }
+    else if err_str.contains("http get error") {
+        return true;
+    }
+    else {
+        return false;
+    }
+}
+
 #[derive(Debug)]
 pub enum AppError {
     BadRequest(anyhow::Error),
@@ -25,12 +44,21 @@ impl IntoResponse for AppError {
                 .into_response(),
             AppError::Timeout => (StatusCode::REQUEST_TIMEOUT).into_response(),
             AppError::Error(error) => {
-                tracing::error!("Error: {:?}", error);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Something went wrong: {error}"),
-                )
-                    .into_response()
+                if is_user_query_error(&error.to_string()) {
+                    tracing::warn!("{:?}", error);
+                    (
+                        StatusCode::BAD_REQUEST,
+                        format!("Query error: {error}"),
+                    )
+                        .into_response()
+                } else {
+                    tracing::error!("{:?}", error);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Something went wrong: {error}"),
+                    )
+                        .into_response()
+                }
             }
         }
     }
