@@ -292,11 +292,14 @@ fn main() {
 }
 
 async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
+    let app_environment = args.app_environment.clone();
+    println!("App environment: {}", app_environment.as_deref().unwrap_or("not set"));
+
     let _sentry_guard = if let Ok(dsn) = std::env::var("SENTRY_DSN") {
         println!("Initializing Sentry with DSN: {}...", &dsn[..dsn.len().min(20)]);
         Some(sentry::init((dsn, sentry::ClientOptions {
             release: Some((*FULL_VERSION).clone().into()),
-            environment: args.app_environment.clone().map(Into::into),
+            environment: app_environment.map(Into::into),
             traces_sample_rate: 1.0,
             enable_logs: true,
             send_default_pii: true,
