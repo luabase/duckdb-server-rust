@@ -296,6 +296,7 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
         println!("Initializing Sentry with DSN: {}...", &dsn[..dsn.len().min(20)]);
         Some(sentry::init((dsn, sentry::ClientOptions {
             release: Some((*FULL_VERSION).clone().into()),
+            environment: args.app_environment.clone().map(Into::into),
             traces_sample_rate: 1.0,
             enable_logs: true,
             send_default_pii: true,
