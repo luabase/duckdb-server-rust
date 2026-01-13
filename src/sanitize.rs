@@ -76,9 +76,15 @@ impl std::fmt::Debug for SanitizedError {
     }
 }
 
-impl<E: Into<anyhow::Error>> From<E> for SanitizedError {
-    fn from(err: E) -> Self {
-        SanitizedError(err.into())
+impl From<anyhow::Error> for SanitizedError {
+    fn from(err: anyhow::Error) -> Self {
+        SanitizedError(err)
+    }
+}
+
+impl std::error::Error for SanitizedError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.0.source()
     }
 }
 
