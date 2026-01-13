@@ -11,7 +11,6 @@ use uuid::Uuid;
 use crate::constants::MEMORY_DB_PATH;
 use crate::db::ConnectionPool;
 use crate::interfaces::{AppError, DbDefaults, DbState, DbType, DucklakeConfig, Extension, SecretConfig};
-use crate::sanitize::SanitizedError;
 
 #[derive(Clone)]
 pub struct RunningQuery {
@@ -95,7 +94,7 @@ impl AppState {
             return Ok(DbType::Memory(
                 database
                     .strip_prefix(MEMORY_DB_PATH)
-                    .ok_or_else(|| AppError::BadRequest(SanitizedError::from(anyhow::anyhow!("Expected database id to start with {} but got {}", MEMORY_DB_PATH, database))))?
+                    .ok_or_else(|| AppError::BadRequest(anyhow::anyhow!("Expected database id to start with {} but got {}", MEMORY_DB_PATH, database).into()))?
                     .to_string())
             );
         }
