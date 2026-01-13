@@ -69,4 +69,6 @@ ENV RUST_LOG=info,duckdb_server=debug
 
 EXPOSE 3000 3030
 
+WORKDIR /app
+
 CMD ["bash", "-c", "ulimit -n 65535 && exec systemfd --no-pid -s http::0.0.0.0:3000 -- duckdb-server serve $DUCKDB_ARGS"]
