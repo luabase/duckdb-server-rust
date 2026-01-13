@@ -31,7 +31,7 @@ where
                     return Err(AppError::Timeout);
                 }
 
-                if let Some(duckdb::Error::DuckDBFailure(_, _)) = err.downcast_ref::<duckdb::Error>() {
+                if let Some(duckdb::Error::DuckDBFailure(_, _)) = err.0.downcast_ref::<duckdb::Error>() {
                     if RETRIABLE_ERRORS.iter().any(|&error| err_str.contains(error))
                     {
                         if attempt <= max_retries {
@@ -75,7 +75,7 @@ where
 pub async fn handle(state: &AppState, params: &QueryParams) -> Result<QueryResponse, AppError> {
     let command = &params.query_type;
     if command.is_none() {
-        return Err(AppError::BadRequest(anyhow::anyhow!("Query type is required")));
+        return Err(AppError::BadRequest(anyhow::anyhow!("Query type is required").into()));
     }
 
     if params.create.unwrap_or(false) {
@@ -87,13 +87,13 @@ pub async fn handle(state: &AppState, params: &QueryParams) -> Result<QueryRespo
     }
 
     let sql = params.sql.clone().ok_or_else(|| {
-        AppError::BadRequest(anyhow::anyhow!("SQL query is required"))
+        AppError::BadRequest(anyhow::anyhow!("SQL query is required").into())
     })?;
 
     if sql.trim().is_empty() {
         return Err(AppError::BadRequest(anyhow::anyhow!(
             "SQL query cannot be empty"
-        )));
+        ).into()));
     }
 
     let db_state = state
@@ -210,7 +210,7 @@ pub async fn cancel_query(state: &AppState, query_id: String) -> Result<QueryRes
         Ok(QueryResponse::QueryCancelled { query_id })
     }
     else {
-        Err(AppError::BadRequest(anyhow::anyhow!("Query not found: {}", query_id)))
+        Err(AppError::BadRequest(anyhow::anyhow!("Query not found: {}", query_id).into()))
     }
 }
 

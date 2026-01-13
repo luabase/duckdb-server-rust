@@ -128,7 +128,7 @@ impl ConnectionPool {
                 Ok(meta) => meta.ino(),
                 Err(e) => {
                     tracing::error!("DuckDB file missing or inaccessible ({}); attempting to rebuild pool", e);
-                    self.reset_pool(None).map_err(|e| AppError::Error(e))?;
+                    self.reset_pool(None).map_err(|e| AppError::Error(e.into()))?;
                     let pool_guard = self.pool.read();
                     return pool_guard.get().map_err(|e| {
                         let err_str = e.to_string().to_lowercase();
@@ -137,7 +137,7 @@ impl ConnectionPool {
                             AppError::Timeout
                         }
                         else {
-                            AppError::Error(anyhow::anyhow!("Pool error: {}", e))
+                            AppError::Error(anyhow::anyhow!("Pool error: {}", e).into())
                         }
                     });
                 }
@@ -152,7 +152,7 @@ impl ConnectionPool {
                     );
 
                     let mut write_guard = parking_lot::RwLockUpgradableReadGuard::upgrade(upg);
-                    let (new_pool, _) = self.reset_pool_internal().map_err(|e| AppError::Error(e))?;
+                    let (new_pool, _) = self.reset_pool_internal().map_err(|e| AppError::Error(e.into()))?;
                     *self.pool.write() = new_pool;
                     *write_guard = Some(current_inode);
                 }
@@ -166,7 +166,7 @@ impl ConnectionPool {
                 AppError::Timeout
             }
             else {
-                AppError::Error(anyhow::anyhow!("Pool error: {}", e))
+                AppError::Error(anyhow::anyhow!("Pool error: {}", e).into())
             }
         })
     }

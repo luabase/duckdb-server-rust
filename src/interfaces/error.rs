@@ -4,6 +4,8 @@ use axum::{
 };
 use std::fmt;
 
+use crate::sanitize::SanitizedError;
+
 fn is_user_query_error(err_str: &str) -> bool {
     let normalized = err_str.to_lowercase();
     let normalized = normalized.trim_start();
@@ -15,10 +17,10 @@ fn is_user_query_error(err_str: &str) -> bool {
 
 #[derive(Debug)]
 pub enum AppError {
-    BadRequest(anyhow::Error),
-    RetriesExceeded(anyhow::Error),
+    BadRequest(SanitizedError),
+    RetriesExceeded(SanitizedError),
     Timeout,
-    Error(anyhow::Error),
+    Error(SanitizedError),
 }
 
 impl IntoResponse for AppError {
@@ -70,6 +72,6 @@ where
     E: Into<anyhow::Error>,
 {
     fn from(err: E) -> Self {
-        AppError::Error(err.into())
+        AppError::Error(SanitizedError(err.into()))
     }
 }
