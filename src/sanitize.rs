@@ -2,7 +2,6 @@ use regex::Regex;
 use std::io::Write;
 use std::sync::LazyLock;
 
-/// Regex patterns for credential sanitization
 static CREDENTIAL_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
     vec![
         // Database connection strings with credentials (postgresql, postgres, mysql, mongodb, etc.)
@@ -29,13 +28,28 @@ static CREDENTIAL_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new
         ),
         // Generic API key patterns
         (
-            Regex::new(r#"(?i)((?:api[_-]?key|apikey|auth[_-]?token|bearer|authorization)[=:\s]+)['"]?[A-Za-z0-9_\-.\/+=]{20,}['"]?"#).unwrap(),
+            Regex::new(r#"(?i)((?:api[_-]?key|apikey|auth[_-]?token|bearer|authorization)[=:\s]+)['"]?[A-Za-z0-9_\-./+=]{20,}['"]?"#).unwrap(),
             "${1}[REDACTED]",
         ),
-        // Password in key=value format
+        // Password in key=value format (unquoted) - require = or : to avoid matching words like "CREATE SECRET"
         (
-            Regex::new(r"(?i)((?:password|passwd|pwd|secret)[=:\s]+)[^\s;,]+").unwrap(),
+            Regex::new(r#"(?i)((?:password|passwd|pwd|secret)\s*[=:]\s*)[^\s;,)}\]"']+"#).unwrap(),
             "${1}[REDACTED]",
+        ),
+        // Password in key=value format (single-quoted)
+        (
+            Regex::new(r"(?i)((?:password|passwd|pwd|secret)\s*[=:]\s*)'[^']*'").unwrap(),
+            "${1}'[REDACTED]'",
+        ),
+        // Password in key=value format (double-quoted)
+        (
+            Regex::new(r#"(?i)((?:password|passwd|pwd|secret)\s*[=:]\s*)"[^"]*""#).unwrap(),
+            "${1}\"[REDACTED]\"",
+        ),
+        // SQL-style PASSWORD 'value' (space-separated, quoted)
+        (
+            Regex::new(r"(?i)(PASSWORD\s+)'[^']*'").unwrap(),
+            "${1}'[REDACTED]'",
         ),
     ]
 });
@@ -145,10 +159,12 @@ mod tests {
 
     #[test]
     fn test_generic_url_credentials() {
-        let input = "https://username:password@api.example.com/endpoint";
+        let input = "https://username:secretpass123@api.example.com/endpoint";
         let sanitized = sanitize_credentials(input);
         assert!(sanitized.contains("[REDACTED]"));
-        assert!(!sanitized.contains("password"));
+        assert!(!sanitized.contains("secretpass123"));
+        assert!(sanitized.contains("username:"));
+        assert!(sanitized.contains("@api.example.com"));
     }
 
     #[test]
@@ -181,13 +197,26 @@ mod tests {
         let sanitized = sanitize_credentials(input);
         assert!(sanitized.contains("[REDACTED]"));
         assert!(!sanitized.contains("mysecretpassword123"));
+
+        let sql_input = "CREATE SECRET (PASSWORD 'topsecret123')";
+        let sql_sanitized = sanitize_credentials(sql_input);
+        assert!(
+            sql_sanitized.contains("[REDACTED]"),
+            "Should contain [REDACTED]. Got: {}",
+            sql_sanitized
+        );
+        assert!(
+            !sql_sanitized.contains("topsecret123"),
+            "Should not contain password. Got: {}",
+            sql_sanitized
+        );
+        assert!(sql_sanitized.ends_with("')"), "Closing characters should be preserved. Got: {}", sql_sanitized);
     }
 
     #[test]
     fn test_preserves_non_sensitive_info() {
         let input = r#"IO Error: Failed to connect to "db.example.com" (1.2.3.4), port 5432 failed: FATAL: connection refused"#;
         let sanitized = sanitize_credentials(input);
-        // Should preserve the error message structure
         assert!(sanitized.contains("db.example.com"));
         assert!(sanitized.contains("1.2.3.4"));
         assert!(sanitized.contains("5432"));
