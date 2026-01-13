@@ -319,6 +319,8 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
         connection_pool_size: args.connection_pool_size.unwrap_or(parallelism as u32),
         row_limit: args.row_limit,
         pool_timeout: args.pool_timeout,
+        pool_idle_timeout: args.pool_idle_timeout,
+        pool_max_lifetime: args.pool_max_lifetime,
     };
 
     let app_state = Arc::new(AppState {

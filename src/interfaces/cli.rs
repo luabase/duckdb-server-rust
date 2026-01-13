@@ -61,6 +61,14 @@ pub struct CliArgs {
     #[arg(long, default_value_t = 10)]
     pub pool_timeout: u64,
 
+    /// Connection pool idle timeout in seconds (0 to disable)
+    #[arg(long, default_value_t = 300, env = "POOL_IDLE_TIMEOUT")]
+    pub pool_idle_timeout: u64,
+
+    /// Connection pool max lifetime in seconds (0 to disable)
+    #[arg(long, default_value_t = 1800, env = "POOL_MAX_LIFETIME")]
+    pub pool_max_lifetime: u64,
+
     /// Enable authentication
     #[arg(long)]
     pub service_auth_enabled: bool,

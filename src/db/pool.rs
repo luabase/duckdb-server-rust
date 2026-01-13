@@ -61,6 +61,8 @@ pub struct ConnectionPool {
     pub(crate) db: DbType,
     pub(crate) pool_size: u32,
     pub(crate) timeout: Duration,
+    pub(crate) idle_timeout: Option<Duration>,
+    pub(crate) max_lifetime: Option<Duration>,
     pub(crate) access_mode: AccessMode,
     pub(crate) pool: parking_lot::RwLock<PoolType>,
     pub(crate) inode: parking_lot::RwLock<Option<u64>>,
@@ -74,14 +76,16 @@ impl ConnectionPool {
         db: DbType,
         pool_size: u32,
         timeout: Duration,
+        idle_timeout: Option<Duration>,
+        max_lifetime: Option<Duration>,
         access_mode: AccessMode,
         extensions: &Option<Vec<Extension>>,
         secrets: &Option<Vec<SecretConfig>>,
         ducklakes: &Option<Vec<DucklakeConfig>>,
     ) -> Result<Self> {
         info!(
-            "Creating connection pool: db={}, pool_size={}, access_mode={:?}, timeout={:?}",
-            db, pool_size, access_mode, timeout
+            "Creating connection pool: db={}, pool_size={}, access_mode={:?}, timeout={:?}, idle_timeout={:?}, max_lifetime={:?}",
+            db, pool_size, access_mode, timeout, idle_timeout, max_lifetime
         );
 
         let inode = match &db {
@@ -93,6 +97,8 @@ impl ConnectionPool {
             &db,
             pool_size,
             timeout,
+            idle_timeout,
+            max_lifetime,
             &access_mode,
             extensions,
             secrets,
@@ -103,6 +109,8 @@ impl ConnectionPool {
             db,
             pool_size,
             timeout,
+            idle_timeout,
+            max_lifetime,
             access_mode,
             pool: parking_lot::RwLock::new(pool),
             inode: parking_lot::RwLock::new(inode),
@@ -186,6 +194,8 @@ impl ConnectionPool {
             &self.db,
             self.pool_size,
             self.timeout,
+            self.idle_timeout,
+            self.max_lifetime,
             &self.access_mode,
             &*extensions,
             &*secrets,
@@ -204,6 +214,8 @@ impl ConnectionPool {
         db: &DbType,
         pool_size: u32,
         timeout: Duration,
+        idle_timeout: Option<Duration>,
+        max_lifetime: Option<Duration>,
         access_mode: &AccessMode,
         extensions: &Option<Vec<Extension>>,
         secrets: &Option<Vec<SecretConfig>>,
@@ -227,6 +239,8 @@ impl ConnectionPool {
                     .max_size(pool_size)
                     .min_idle(Some(1))
                     .connection_timeout(timeout)
+                    .idle_timeout(idle_timeout)
+                    .max_lifetime(max_lifetime)
                     .build(manager)?;
 
                 let conn = pool.get()?;
@@ -251,6 +265,8 @@ impl ConnectionPool {
                     .max_size(pool_size)
                     .min_idle(Some(1))
                     .connection_timeout(timeout)
+                    .idle_timeout(idle_timeout)
+                    .max_lifetime(max_lifetime)
                     .build(manager)?;
 
                 let conn = pool.get()?;

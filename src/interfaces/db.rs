@@ -11,6 +11,8 @@ pub struct DbDefaults {
     pub connection_pool_size: u32,
     pub row_limit: usize,
     pub pool_timeout: u64,
+    pub pool_idle_timeout: u64,
+    pub pool_max_lifetime: u64,
 }
 
 pub struct DbState {
