@@ -1518,7 +1518,7 @@ dependencies = [
 
 [[package]]
 name = "duckdb-server"
-version = "2026.113.0"
+version = "2026.113.1"
 dependencies = [
  "anyhow",
  "arrow",
