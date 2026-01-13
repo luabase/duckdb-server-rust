@@ -113,6 +113,12 @@ jobs:
     needs: [bump-version]
     if: always() && !failure() && !cancelled()
     steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref || github.ref }}
@@ -122,9 +128,18 @@ jobs:
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
 
       - name: Build
         run: cargo build --verbose
 
       - name: Run tests
         run: cargo test --verbose
+
+      - name: Cleanup before cache
+        run: |
+          cargo clean --release
+          rm -rf target/debug/deps
+          rm -rf target/debug/build
+          rm -rf target/debug/incremental
