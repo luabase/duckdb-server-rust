@@ -1,6 +1,6 @@
 [package]
 name = "duckdb-server"
-version = "2026.113.3"
+version = "2026.113.4"
 edition = "2024"
 repository = "https://github.com/luabase/duckdb-server-rust"
 description = "Definite DuckDB Server"
