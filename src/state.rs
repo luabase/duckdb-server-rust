@@ -103,16 +103,14 @@ impl AppState {
         if path.exists() {
             let path_str = path.to_str().ok_or_else(|| {
                 AppError::BadRequest(anyhow::anyhow!(
-                    "Database path contains invalid UTF-8: {}",
-                    path.display()
+                    "Database path contains invalid UTF-8"
                 ).into())
             })?;
             Ok(DbType::File(path_str.to_string()))
         } else {
             Err(AppError::BadRequest(anyhow::anyhow!(
-                "Database {} not found at root: {}",
-                database,
-                self.root
+                "Database not found: {}",
+                database
             ).into()))
         }
     }
@@ -193,12 +191,12 @@ impl AppState {
         if !path.exists() {
             if let Some(parent) = path.parent() {
                 tokio::fs::create_dir_all(parent).await.map_err(|e| {
-                    AppError::Error(anyhow::anyhow!("Failed to create directory {}: {}", parent.display(), e).into())
+                    AppError::Error(anyhow::anyhow!("Failed to create database directory: {}", e).into())
                 })?;
             }
 
             let conn = duckdb::Connection::open(&path).map_err(|e| {
-                AppError::Error(anyhow::anyhow!("Failed to create database {}: {}", path.display(), e).into())
+                AppError::Error(anyhow::anyhow!("Failed to create database: {}", e).into())
             })?;
 
             drop(conn);
