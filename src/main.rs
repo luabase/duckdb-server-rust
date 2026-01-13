@@ -16,6 +16,7 @@ use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 use crate::auth::create_auth_config;
 use crate::constants::FULL_VERSION;
 use crate::interfaces::{CliArgs, Cli, CliCommand, DbDefaults};
+use crate::sanitize::{sanitize_credentials, SanitizingMakeWriter};
 use crate::state::AppState;
 
 const PANIC_EXIT_CODE: i32 = 101;
@@ -38,6 +39,7 @@ mod db;
 mod flight;
 mod interfaces;
 mod query;
+mod sanitize;
 mod sql;
 mod state;
 
@@ -198,7 +200,7 @@ fn main() {
         let backtrace = std::backtrace::Backtrace::capture();
 
         log_panic_entry("PANIC DETECTED", serde_json::json!({
-            "panic_info": panic_info.to_string()
+            "panic_info": sanitize_credentials(&panic_info.to_string())
         }));
 
         if let Some(location) = panic_info.location() {
@@ -211,12 +213,12 @@ fn main() {
 
         if let Some(payload) = panic_info.payload().downcast_ref::<&str>() {
             log_panic_entry("PANIC PAYLOAD", serde_json::json!({
-                "payload": payload
+                "payload": sanitize_credentials(payload)
             }));
         }
 
         log_panic_entry("STACK TRACE", serde_json::json!({
-            "backtrace": backtrace.to_string()
+            "backtrace": sanitize_credentials(&backtrace.to_string())
         }));
 
         let rust_backtrace = std::env::var("RUST_BACKTRACE").unwrap_or_else(|_| "not set".to_string());
@@ -330,7 +332,9 @@ async fn app_main(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
         running_queries: Mutex::new(HashMap::new()),
     });
 
-    let fmt_layer = tracing_subscriber::fmt::layer().with_ansi(!args.no_color);
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .with_ansi(!args.no_color)
+        .with_writer(SanitizingMakeWriter);
     let sentry_layer = sentry::integrations::tracing::layer()
         .with_filter(tracing_subscriber::filter::LevelFilter::ERROR);
 

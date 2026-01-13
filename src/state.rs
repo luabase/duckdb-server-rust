@@ -11,6 +11,7 @@ use uuid::Uuid;
 use crate::constants::MEMORY_DB_PATH;
 use crate::db::ConnectionPool;
 use crate::interfaces::{AppError, DbDefaults, DbState, DbType, DucklakeConfig, Extension, SecretConfig};
+use crate::sanitize::SanitizedError;
 
 #[derive(Clone)]
 pub struct RunningQuery {
@@ -94,7 +95,7 @@ impl AppState {
             return Ok(DbType::Memory(
                 database
                     .strip_prefix(MEMORY_DB_PATH)
-                    .ok_or_else(|| AppError::BadRequest(anyhow::anyhow!("Expected database id to start with {} but got {}", MEMORY_DB_PATH, database)))?
+                    .ok_or_else(|| AppError::BadRequest(SanitizedError::from(anyhow::anyhow!("Expected database id to start with {} but got {}", MEMORY_DB_PATH, database))))?
                     .to_string())
             );
         }
@@ -105,7 +106,7 @@ impl AppState {
                 AppError::BadRequest(anyhow::anyhow!(
                     "Database path contains invalid UTF-8: {}",
                     path.display()
-                ))
+                ).into())
             })?;
             Ok(DbType::File(path_str.to_string()))
         } else {
@@ -113,7 +114,7 @@ impl AppState {
                 "Database {} not found at root: {}",
                 database,
                 self.root
-            )))
+            ).into()))
         }
     }
 
@@ -124,7 +125,7 @@ impl AppState {
             db_state.db.reconnect()?;
         }
         else {
-            return Err(AppError::BadRequest(anyhow::anyhow!("Database {} not found", database)));
+            return Err(AppError::BadRequest(anyhow::anyhow!("Database {} not found", database).into()));
         }
 
         Ok(())
@@ -187,18 +188,18 @@ impl AppState {
         if access_mode == duckdb::AccessMode::ReadOnly {
             return Err(AppError::BadRequest(anyhow::anyhow!(
                 "Cannot create database in readonly mode"
-            )));
+            ).into()));
         }
 
         if !path.exists() {
             if let Some(parent) = path.parent() {
                 tokio::fs::create_dir_all(parent).await.map_err(|e| {
-                    AppError::Error(anyhow::anyhow!("Failed to create directory {}: {}", parent.display(), e))
+                    AppError::Error(anyhow::anyhow!("Failed to create directory {}: {}", parent.display(), e).into())
                 })?;
             }
 
             let conn = duckdb::Connection::open(&path).map_err(|e| {
-                AppError::Error(anyhow::anyhow!("Failed to create database {}: {}", path.display(), e))
+                AppError::Error(anyhow::anyhow!("Failed to create database {}: {}", path.display(), e).into())
             })?;
 
             drop(conn);

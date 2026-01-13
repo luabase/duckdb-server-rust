@@ -6,6 +6,7 @@ mod db;
 mod flight;
 mod interfaces;
 mod query;
+mod sanitize;
 mod sql;
 mod state;
 
@@ -16,4 +17,5 @@ pub use db::{ConnectionPool, Database};
 pub use flight::{FlightServer, serve};
 pub use interfaces::{AppError, Command, DbState, QueryParams, QueryResponse};
 pub use query::handle;
+pub use sanitize::{sanitize_credentials, SanitizedError, SanitizingMakeWriter};
 pub use state::AppState;
