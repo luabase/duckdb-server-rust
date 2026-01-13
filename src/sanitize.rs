@@ -18,8 +18,13 @@ static CREDENTIAL_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new
         ),
         // AWS Access Key ID (starts with AKIA, ABIA, ACCA, ASIA)
         (
-            Regex::new(r"(?i)((?:aws_access_key_id|access_key_id|accesskeyid)[=:\s]+)[A-Z0-9]{20}").unwrap(),
+            Regex::new(r"(?i)((?:aws_access_key_id|access_key_id|accesskeyid)[=:\s]+)(?:AKIA|ABIA|ACCA|ASIA)[A-Z0-9]{16}").unwrap(),
             "${1}[REDACTED]",
+        ),
+        // AWS Access Key ID without label (standalone key starting with known prefixes)
+        (
+            Regex::new(r"\b(AKIA|ABIA|ACCA|ASIA)[A-Z0-9]{16}\b").unwrap(),
+            "[REDACTED]",
         ),
         // AWS Secret Access Key
         (
