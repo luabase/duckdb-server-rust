@@ -1,8 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     types: [opened, synchronize]
     branches: [main]
@@ -22,7 +20,6 @@ jobs:
   bump-version:
     runs-on: ubuntu-latest
     if: |
-      github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.head_ref != 'release' &&
       !contains(github.event.pull_request.labels.*.name, 'skip-version')
@@ -113,31 +110,49 @@ jobs:
     needs: [bump-version]
     if: always() && !failure() && !cancelled()
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
+          fetch-depth: 2
+
+      - name: Check for skip-ci
+        id: skip-check
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          if [[ "$COMMIT_MSG" == *"skip-ci"* ]]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Skipping CI due to 'skip-ci' in commit message"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Free disk space
+        if: steps.skip-check.outputs.skip != 'true'
         run: |
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
 
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref }}
-
       - name: Install Rust toolchain
+        if: steps.skip-check.outputs.skip != 'true'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache dependencies
+        if: steps.skip-check.outputs.skip != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
 
       - name: Build
+        if: steps.skip-check.outputs.skip != 'true'
         run: cargo build --verbose
 
       - name: Run tests
+        if: steps.skip-check.outputs.skip != 'true'
         run: cargo test --verbose
 
       - name: Cleanup before cache
+        if: steps.skip-check.outputs.skip != 'true'
         run: |
           cargo clean --release
           rm -rf target/debug/deps
