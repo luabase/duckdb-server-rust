@@ -1,7 +1,7 @@
 ARG PROJECT_ID
 
 # Stage 1: Chef - prepare recipe
-FROM rustlang/rust:nightly AS chef
+FROM rust:bookworm AS chef
 RUN cargo install cargo-chef
 WORKDIR /app
 
