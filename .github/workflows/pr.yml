@@ -119,9 +119,10 @@ jobs:
         id: skip-check
         run: |
           COMMIT_MSG=$(git log -1 --pretty=%B)
-          if [[ "$COMMIT_MSG" == *"skip-ci"* ]]; then
+          echo "Commit message: $COMMIT_MSG"
+          if echo "$COMMIT_MSG" | grep -qiE '\[?skip[- ]?ci\]?'; then
             echo "skip=true" >> $GITHUB_OUTPUT
-            echo "Skipping CI due to 'skip-ci' in commit message"
+            echo "Skipping CI due to skip-ci in commit message"
           else
             echo "skip=false" >> $GITHUB_OUTPUT
           fi
