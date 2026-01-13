@@ -2,6 +2,40 @@ use regex::Regex;
 use std::io::Write;
 use std::sync::LazyLock;
 
+/// Fast check for potential credential indicators before running expensive regex
+#[inline]
+fn may_contain_credentials(input: &str) -> bool {
+    let lower = input.to_lowercase();
+
+    // Check for URL credentials pattern
+    if input.contains("://") && input.contains('@') {
+        return true;
+    }
+
+    // Check for password-related keywords
+    if lower.contains("password") || lower.contains("passwd")
+        || lower.contains("pwd=") || lower.contains("pwd:")
+        || lower.contains("secret=") || lower.contains("secret:") {
+        return true;
+    }
+
+    // Check for AWS key patterns
+    if input.contains("AKIA") || input.contains("ABIA")
+        || input.contains("ACCA") || input.contains("ASIA") {
+        return true;
+    }
+
+    // Check for API key patterns
+    if lower.contains("api_key") || lower.contains("apikey")
+        || lower.contains("api-key") || lower.contains("auth_token")
+        || lower.contains("auth-token") || lower.contains("bearer")
+        || lower.contains("authorization") || lower.contains("access_key") {
+        return true;
+    }
+
+    false
+}
+
 static CREDENTIAL_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
     vec![
         // Database connection strings with credentials (postgresql, postgres, mysql, mongodb, etc.)
@@ -60,6 +94,11 @@ static CREDENTIAL_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new
 });
 
 pub fn sanitize_credentials(input: &str) -> String {
+    // Fast path: skip regex processing if no credential indicators found
+    if !may_contain_credentials(input) {
+        return input.to_string();
+    }
+
     let mut result = input.to_string();
     for (pattern, replacement) in CREDENTIAL_PATTERNS.iter() {
         result = pattern.replace_all(&result, *replacement).into_owned();
@@ -93,6 +132,8 @@ impl std::error::Error for SanitizedError {
     }
 }
 
+/// A writer that sanitizes credentials from all output before writing.
+/// Used to wrap stderr/stdout for tracing to ensure no credentials leak in logs.
 pub struct SanitizingWriter<W> {
     inner: W,
 }
@@ -104,12 +145,21 @@ impl<W> SanitizingWriter<W> {
 }
 
 impl<W: Write> Write for SanitizingWriter<W> {
+    /// Writes sanitized content to the inner writer.
+    ///
+    /// # Return Value
+    /// Returns the number of bytes consumed from the input buffer (always `buf.len()`),
+    /// NOT the number of bytes written to the inner writer. This follows the Write trait
+    /// contract where the return value indicates input consumption. The actual output
+    /// may differ in length due to credential redaction (e.g., a 40-char password
+    /// becomes "[REDACTED]").
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let original_len = buf.len();
         if let Ok(s) = std::str::from_utf8(buf) {
             let sanitized = sanitize_credentials(s);
             self.inner.write_all(sanitized.as_bytes())?;
         } else {
+            // Non-UTF8 content passed through unchanged
             self.inner.write_all(buf)?;
         }
         Ok(original_len)
