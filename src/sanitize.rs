@@ -202,4 +202,111 @@ mod tests {
         assert!(sanitized.contains("db.wppxcloozcjeldrhnape.supabase.co"));
         assert!(sanitized.contains("remaining connection slots"));
     }
+
+    #[test]
+    fn test_duckdb_ducklake_error_sanitized() {
+        let conn = duckdb::Connection::open_in_memory().unwrap();
+
+        let _ = conn.execute("INSTALL ducklake", []);
+        let _ = conn.execute("LOAD ducklake", []);
+
+        let fake_password = "SuperSecretTestPassword123!";
+        let attach_sql = format!(
+            "ATTACH 'ducklake:postgresql://test_user:{}@nonexistent.example.com:5432/testdb' AS test_lake",
+            fake_password
+        );
+
+        let result = conn.execute(&attach_sql, []);
+
+        assert!(result.is_err(), "Expected connection to fail");
+
+        let error = result.unwrap_err();
+        let error_str = error.to_string();
+
+        let sanitized = sanitize_credentials(&error_str);
+
+        assert!(
+            !sanitized.contains(fake_password),
+            "Sanitized error should not contain password. Got: {}",
+            sanitized
+        );
+
+        if sanitized.contains("nonexistent.example.com") {
+            assert!(
+                sanitized.contains("[REDACTED]"),
+                "If connection string is in error, it should have [REDACTED]. Got: {}",
+                sanitized
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_http_error_response_sanitized() {
+        use axum::body::Body;
+        use axum::http::{Request, StatusCode};
+        use http_body_util::BodyExt;
+        use std::collections::HashMap;
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+        use tower::ServiceExt;
+
+        use crate::app::app;
+        use crate::interfaces::DbDefaults;
+        use crate::state::AppState;
+
+        let app_state = Arc::new(AppState {
+            defaults: DbDefaults {
+                access_mode: "automatic".to_string(),
+                cache_size: 100,
+                connection_pool_size: 1,
+                row_limit: 1000,
+                pool_timeout: 30,
+                pool_idle_timeout: 0,
+                pool_max_lifetime: 0,
+            },
+            root: "/tmp".to_string(),
+            states: Mutex::new(HashMap::new()),
+            running_queries: Mutex::new(HashMap::new()),
+        });
+
+        let router = app(app_state, 30, None).await.unwrap();
+
+        let fake_password = "SuperSecretHttpTestPassword456!";
+        let body = serde_json::json!({
+            "type": "exec",
+            "database": ":memory:test",
+            "sql": format!(
+                "ATTACH 'ducklake:postgresql://test_user:{}@nonexistent.example.com:5432/testdb' AS test_lake",
+                fake_password
+            )
+        });
+
+        let request = Request::builder()
+            .method("POST")
+            .uri("/query")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&body).unwrap()))
+            .unwrap();
+
+        let response = router.oneshot(request).await.unwrap();
+
+        assert_ne!(response.status(), StatusCode::OK, "Expected request to fail");
+
+        let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let response_text = String::from_utf8(body_bytes.to_vec()).unwrap();
+
+        assert!(
+            !response_text.contains(fake_password),
+            "HTTP response should not contain password. Got: {}",
+            response_text
+        );
+
+        if response_text.contains("nonexistent.example.com") {
+            assert!(
+                response_text.contains("[REDACTED]"),
+                "If connection string is in response, it should have [REDACTED]. Got: {}",
+                response_text
+            );
+        }
+    }
 }
