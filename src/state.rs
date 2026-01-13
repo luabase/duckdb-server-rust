@@ -45,18 +45,33 @@ impl AppState {
         let db_type = self.resolve_db_type(database)?;
         let access_mode = AppState::convert_access_mode(&self.defaults.access_mode);
 
+        let idle_timeout = if self.defaults.pool_idle_timeout > 0 {
+            Some(Duration::from_secs(self.defaults.pool_idle_timeout))
+        } else {
+            None
+        };
+        let max_lifetime = if self.defaults.pool_max_lifetime > 0 {
+            Some(Duration::from_secs(self.defaults.pool_max_lifetime))
+        } else {
+            None
+        };
+
         tracing::info!(
-            "Creating DuckDB connection: db={}, pool_size={}, access_mode={}, timeout={}",
+            "Creating DuckDB connection: db={}, pool_size={}, access_mode={}, timeout={}, idle_timeout={:?}, max_lifetime={:?}",
             db_type,
             self.defaults.connection_pool_size,
             self.defaults.access_mode,
-            self.defaults.pool_timeout
+            self.defaults.pool_timeout,
+            idle_timeout,
+            max_lifetime
         );
 
         let db = ConnectionPool::new(
             db_type,
             self.defaults.connection_pool_size,
             Duration::from_secs(self.defaults.pool_timeout),
+            idle_timeout,
+            max_lifetime,
             access_mode,
             extensions,
             secrets,
