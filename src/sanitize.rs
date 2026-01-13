@@ -25,6 +25,16 @@ fn may_contain_credentials(input: &str) -> bool {
         return true;
     }
 
+    // Check for GCS key patterns
+    if input.contains("GOOG") {
+        return true;
+    }
+
+    // Check for key_id field
+    if lower.contains("key_id") {
+        return true;
+    }
+
     // Check for API key patterns
     if lower.contains("api_key") || lower.contains("apikey")
         || lower.contains("api-key") || lower.contains("auth_token")
@@ -59,6 +69,21 @@ static CREDENTIAL_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new
         (
             Regex::new(r"\b(AKIA|ABIA|ACCA|ASIA)[A-Z0-9]{16}\b").unwrap(),
             "[REDACTED]",
+        ),
+        // GCS Service Account Key ID (starts with GOOG)
+        (
+            Regex::new(r"\bGOOG[A-Za-z0-9]{20,}\b").unwrap(),
+            "[REDACTED]",
+        ),
+        // key_id field in Rust Debug/struct output: key_id: Some("...") or key_id: "..."
+        (
+            Regex::new(r#"(?i)(key_id:\s*(?:Some\()?)["'][^"']+["']\)?"#).unwrap(),
+            "${1}[REDACTED])",
+        ),
+        // secret field in Rust Debug/struct output: secret: Some("...") or secret: "..."
+        (
+            Regex::new(r#"(?i)(secret:\s*(?:Some\()?)["'][^"']+["']\)?"#).unwrap(),
+            "${1}[REDACTED])",
         ),
         // AWS Secret Access Key
         (
@@ -242,6 +267,43 @@ mod tests {
         let sanitized = sanitize_credentials(input);
         assert!(sanitized.contains("[REDACTED]"));
         assert!(!sanitized.contains("wJalrXUtnFEMI"));
+    }
+
+    #[test]
+    fn test_gcs_key_id() {
+        let fake_key = "GOOGTESTFAKEKEYNOTREAL12345678901234567890";
+        let input = format!(r#"key_id: Some("{}")"#, fake_key);
+        let sanitized = sanitize_credentials(&input);
+        assert!(sanitized.contains("[REDACTED]"));
+        assert!(!sanitized.contains(fake_key));
+    }
+
+    #[test]
+    fn test_gcs_key_standalone() {
+        let fake_key = "GOOGTESTFAKEKEYNOTREAL12345678901234567890";
+        let input = format!("Using GCS key {} for auth", fake_key);
+        let sanitized = sanitize_credentials(&input);
+        assert!(sanitized.contains("[REDACTED]"));
+        assert!(!sanitized.contains(fake_key));
+    }
+
+    #[test]
+    fn test_secret_struct_field() {
+        let fake_secret = "fake_test_secret_value_not_real_1234";
+        let input = format!(r#"secret: Some("{}")"#, fake_secret);
+        let sanitized = sanitize_credentials(&input);
+        assert!(sanitized.contains("[REDACTED]"));
+        assert!(!sanitized.contains(fake_secret));
+    }
+
+    #[test]
+    fn test_secret_config_struct() {
+        let fake_key = "GOOGTESTFAKEKEYNOTREAL12345678901234567890";
+        let fake_secret = "fake_test_secret_value_not_real_1234";
+        let input = format!(r#"SecretConfig {{ name: "ducklake-test", secret_type: "GCS", key_id: Some("{}"), secret: Some("{}") }}"#, fake_key, fake_secret);
+        let sanitized = sanitize_credentials(&input);
+        assert!(!sanitized.contains(fake_key), "GCS key should be redacted: {}", sanitized);
+        assert!(!sanitized.contains(fake_secret), "Secret should be redacted: {}", sanitized);
     }
 
     #[test]
